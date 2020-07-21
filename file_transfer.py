@@ -223,7 +223,7 @@ def argparser_init():
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         # allow_abbrev=False,
         description=' '.join([
-            "Copy(/link/move) a single file, whole file tree, or list of files.",
+            "Copy, link, or move a single file/directory, whole file tree, or list of files/directories.",
         ])
     )
 

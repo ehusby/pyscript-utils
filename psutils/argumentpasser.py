@@ -141,16 +141,18 @@ class ArgumentPasser(object):
     def provided(self, argstr):
         return argstr in self.provided_opt_args
 
-    def _make_argstr2action_dict(self):
-        argstr2action = {}
+    def _make_varstr2action_dict(self):
+        return {act.dest: act for act in reversed(self.parser._actions)}
+
+    def _make_varstr2argstr_dict(self):
+        varstr2argstr = {}
         for act in reversed(self.parser._actions):
             if len(act.option_strings) == 0:
                 argstr = act.dest.replace('_', '-')
-                argstr2action[argstr] = act
             else:
-                for argstr in act.option_strings:
-                    argstr2action[argstr] = act
-        return argstr2action
+                argstr = max(act.option_strings, key=len)
+            varstr2argstr[act.dest] = argstr
+        return varstr2argstr
 
     def _make_argstr2varstr_dict(self):
         argstr2varstr = {}
@@ -163,18 +165,16 @@ class ArgumentPasser(object):
                     argstr2varstr[argstr] = act.dest
         return argstr2varstr
 
-    def _make_varstr2argstr_dict(self):
-        varstr2argstr = {}
+    def _make_argstr2action_dict(self):
+        argstr2action = {}
         for act in reversed(self.parser._actions):
             if len(act.option_strings) == 0:
                 argstr = act.dest.replace('_', '-')
+                argstr2action[argstr] = act
             else:
-                argstr = max(act.option_strings, key=len)
-            varstr2argstr[act.dest] = argstr
-        return varstr2argstr
-
-    def _make_varstr2action_dict(self):
-        return {act.dest: act for act in reversed(self.parser._actions)}
+                for argstr in act.option_strings:
+                    argstr2action[argstr] = act
+        return argstr2action
 
     def _find_pos_args(self):
         return [act.dest.replace('_', '-') for act in self.parser._actions if len(act.option_strings) == 0]
