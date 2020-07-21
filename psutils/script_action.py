@@ -7,13 +7,16 @@ import smtplib
 import subprocess
 import traceback
 
+import psutils.custom_errors as cerr
 import psutils.scheduler as psu_sched
 from psutils.print_methods import *
 
 from psutils import PYTHON_VERSION_REQUIRED_MIN
+from psutils.argumentpasser import ArgumentPasser
 from psutils.tasklist import write_task_bundles
 from psutils.string import get_index_fmtstr
 from psutils.stream import capture_stdout_stderr
+from psutils.func import with_noop
 
 
 def send_email(to_addr, subject, body, from_addr=None):
@@ -65,6 +68,31 @@ def check_mut_excl_arggrp(args, argcol_mut_excl):
                 "{} and {}".format(*arggrp) if len(arggrp) == 2 else "The following",
                 '' if len(arggrp) == 2 else ": {}".format(arggrp)
             ))
+
+
+def parse_args(python_exe, script_file, arg_parser, sys_argv, removeable_args=[]):
+
+    remove_args = None
+    if removeable_args is None or (type(removeable_args) is list and len(removeable_args) == 0):
+        try_removing_args = False
+        stream_capture_func = with_noop
+    else:
+        try_removing_args = True
+        stream_capture_func = capture_stdout_stderr
+
+    while True:
+        try:
+            with stream_capture_func() as _:
+                args = ArgumentPasser(python_exe, script_file, arg_parser, sys_argv, remove_args)
+            return args
+        except cerr.ScriptArgumentError as e:
+            arg_parser.error(str(e))
+        except SystemExit as e:
+            if try_removing_args and remove_args is not removeable_args:
+                remove_args = removeable_args
+                stream_capture_func = with_noop
+            else:
+                raise
 
 
 def create_argument_directories(args, *dir_argstrs):

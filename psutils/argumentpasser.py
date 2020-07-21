@@ -2,6 +2,7 @@
 import argparse
 import copy
 import os
+import sys
 
 import psutils.custom_errors as cerr
 
@@ -10,9 +11,24 @@ from psutils.scheduler import SCHED_PBS, SCHED_SLURM
 
 class RawTextArgumentDefaultsHelpFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawTextHelpFormatter): pass
 
+class CustomArgumentParser(argparse.ArgumentParser):
+    suppress_argument_error = False
+    def error(self, message):
+        """error(message: string)
+
+        Prints a usage message incorporating the message to stderr and
+        exits.
+
+        If you override this in a subclass, it should not return -- it
+        should either exit or raise an exception.
+        """
+        self.print_usage(sys.stderr)
+        args = {'prog': self.prog, 'message': message}
+        self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+
 class ArgumentPasser(object):
 
-    def __init__(self, executable_path, script_file, parser, sys_argv=[''], parse=True):
+    def __init__(self, executable_path, script_file, parser, sys_argv=[''], remove_args=[], parse=True):
         self.exe = executable_path
         self.script_file = script_file
         self.script_fname = os.path.basename(script_file)
@@ -21,10 +37,21 @@ class ArgumentPasser(object):
         self.script_run_cmd = ' '.join(self.sys_argv)
         self.parsed = parse
 
+        if remove_args is None or (type(remove_args) is list and len(remove_args) == 0):
+            pass
+        else:
+            if type(remove_args) is str:
+                remove_args = [remove_args]
+            argstr2varstr = self._make_argstr2varstr_dict()
+            varstr2action = self._make_varstr2action_dict()
+            for remove_argstr in remove_args:
+                remove_action = varstr2action[argstr2varstr[remove_argstr]]
+                self.parser._remove_action(remove_action)
+
+        self.argstr_pos = self._find_pos_args()
         self.argstr2varstr = self._make_argstr2varstr_dict()
         self.varstr2argstr = self._make_varstr2argstr_dict()
         self.varstr2action = self._make_varstr2action_dict()
-        self.argstr_pos = self._find_pos_args()
         self.provided_opt_args = self._find_provided_opt_args()
 
         if parse:
@@ -114,27 +141,40 @@ class ArgumentPasser(object):
     def provided(self, argstr):
         return argstr in self.provided_opt_args
 
+    def _make_argstr2action_dict(self):
+        argstr2action = {}
+        for act in reversed(self.parser._actions):
+            if len(act.option_strings) == 0:
+                argstr = act.dest.replace('_', '-')
+                argstr2action[argstr] = act
+            else:
+                for argstr in act.option_strings:
+                    argstr2action[argstr] = act
+        return argstr2action
+
     def _make_argstr2varstr_dict(self):
         argstr2varstr = {}
-        for act in self.parser._actions:
+        for act in reversed(self.parser._actions):
             if len(act.option_strings) == 0:
-                argstr2varstr[act.dest.replace('_', '-')] = act.dest
+                argstr = act.dest.replace('_', '-')
+                argstr2varstr[argstr] = act.dest
             else:
-                for os in act.option_strings:
-                    argstr2varstr[os] = act.dest
+                for argstr in act.option_strings:
+                    argstr2varstr[argstr] = act.dest
         return argstr2varstr
 
     def _make_varstr2argstr_dict(self):
         varstr2argstr = {}
-        for act in self.parser._actions:
+        for act in reversed(self.parser._actions):
             if len(act.option_strings) == 0:
-                varstr2argstr[act.dest] = act.dest.replace('_', '-')
+                argstr = act.dest.replace('_', '-')
             else:
-                varstr2argstr[act.dest] = sorted(act.option_strings)[0]
+                argstr = max(act.option_strings, key=len)
+            varstr2argstr[act.dest] = argstr
         return varstr2argstr
 
     def _make_varstr2action_dict(self):
-        return {act.dest: act for act in self.parser._actions}
+        return {act.dest: act for act in reversed(self.parser._actions)}
 
     def _find_pos_args(self):
         return [act.dest.replace('_', '-') for act in self.parser._actions if len(act.option_strings) == 0]

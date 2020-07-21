@@ -9,11 +9,6 @@ import os
 import sys
 import traceback
 
-# # FIXME: Use this method of importing PSU when it is in PyPI
-# import psutils.custom_errors as cerr
-# import psutils.globals as psu_globals
-# from psutils.versionstring import VersionString
-
 ##############################
 
 ### Core globals ###
@@ -54,7 +49,7 @@ from psutils.logger import setup_logging
 setup_logging()
 from psutils.print_methods_logging import *
 
-from psutils.argumentpasser import ArgumentPasser, RawTextArgumentDefaultsHelpFormatter
+from psutils.argumentpasser import RawTextArgumentDefaultsHelpFormatter
 import psutils.argtype as psu_at
 import psutils.script_action as psu_act
 import psutils.scheduler as psu_sched
@@ -81,37 +76,35 @@ import glob
 
 ## Argument strings ("ARGSTR_")
 # (positional first, then optional with '--' prefix)
-ARGSTR_SRC, ARGBRV_SRC = '--src', '-s'
+ARGSTR_SRC_POS = 'src'
+ARGSTR_DST_POS = 'dst'
+ARGSTR_SRC = '--src'
 ARGSTR_SRCLIST = '--srclist'
-ARGBRV_SRCLIST = '-sl'
 ARGSTR_SRCLIST_ROOTED = '--srclist-rooted'
-ARGBRV_SRCLIST_ROOTED = '-slr'
+ARGSTR_SRCLIST_PREFIX = '--srclist-prefix'
+ARGSTR_SRCLIST_PREFIX_DST = '--srclist-prefix-dst'
 ARGSTR_DST = '--dst'
-ARGBRV_DST = '-d'
 ARGSTR_DSTDIR_GLOBAL = '--dstdir-global'
-ARGBRV_DSTDIR_GLOBAL = '-dg'
 ARGSTR_COPY_METHOD = '--copy-method'
-ARGBRV_COPY_METHOD = '-cm'
 ARGSTR_OVERWRITE = '--overwrite'
-ARGBRV_OVERWRITE = '-o'
 ARGSTR_MINDEPTH = '--mindepth'
-ARGBRV_MINDEPTH = '-d0'
 ARGSTR_MAXDEPTH = '--maxdepth'
-ARGBRV_MAXDEPTH = '-d1'
 ARGSTR_SYNC_TREE = '--sync-tree'
-ARGBRV_SYNC_TREE = '-st'
 ARGSTR_TRANSPLANT_TREE = '--transplant-tree'
-ARGBRV_TRANSPLANT_TREE = '-tt'
 ARGSTR_COLLAPSE_TREE = '--collapse-tree'
-ARGBRV_COLLAPSE_TREE = '-ct'
 ARGSTR_SRCLIST_DELIM = '--srclist-delim'
 ARGSTR_SRCLIST_NOGLOB = '--srclist-noglob'
 ARGSTR_QUIET = '--quiet'
-ARGBRV_QUIET = '-q'
 ARGSTR_DEBUG = '--debug'
-ARGBRV_DEBUG = '-db'
 ARGSTR_DRYRUN = '--dryrun'
-ARGBRV_DRYRUN = '-dr'
+
+## "Removable" arguments
+#  Typically these are positional argument strings that are doubled as optional arguments,
+#  and are thus not required to be provided as positional arguments if optional arguments are provided.
+REMOVABLE_ARGS = [
+    ARGSTR_SRC_POS,
+    ARGSTR_DST_POS
+]
 
 ## Argument choices (declare "ARGCHO_{ARGSTR}_{option}" options followed by list of all options as "ARGCHO_{ARGSTR}")
 ARGCHO_COPY_METHOD_COPY = 'copy'
@@ -206,7 +199,7 @@ def pre_argparse():
     srclist_delimiter = provided_srclist_delimiter if provided_srclist_delimiter is not None else ARGDEF_SRCLIST_DELIM
 
     ARGHLP_SRCLIST_FORMAT = ' '.join([
-        "\n(1) All 'src_path' line items (only when argument {} directory is provided)".format(ARGSTR_DST),
+        "\n(1) All 'src_path' line items (only when argument {}/{} directory is provided)".format(ARGSTR_DST, ARGSTR_DSTDIR_GLOBAL),
         "\n(2) A single 'src_path{}dst_dir' line at top followed by all 'src_path' line items".format(srclist_delimiter),
         "(where 'dst_dir' is a directory used for all items in the list)",
         "\n(3) All 'src_path{}dst_path' line items".format(srclist_delimiter)
@@ -218,7 +211,7 @@ def pre_argparse():
         "line item will be replicated within the destination root directory.",
         "\nIf 'src_path' items are absolute paths, each is expected to start with the",
         "'src_rootdir' path EXACTLY as it appears in the header. If a 'src_path' item does not",
-        "start with 'src_rootdir', the the 'src_path' item will be treated as a relative path",
+        "start with 'src_rootdir', then the 'src_path' item will be treated as a relative path",
         "within 'src_rootdir'.",
     ])
 
@@ -236,11 +229,34 @@ def argparser_init():
 
     ## Positional arguments
 
+    parser.add_argument(
+        ARGSTR_SRC_POS,
+        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_SRC_POS,
+            existcheck_fn=os.path.exists,
+            existcheck_reqval=True,
+            accesscheck_reqtrue=os.R_OK),
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "Path to source file or directory to be copied.",
+        ])
+    )
+
+    parser.add_argument(
+        ARGSTR_DST_POS,
+        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_DST_POS,
+            accesscheck_reqtrue=os.W_OK,
+            accesscheck_parent_if_dne=True),
+        help=' '.join([
+            "Path to output file copy, or directory in which copies of source files will be created.",
+        ])
+    )
+
 
     ## Optional arguments
 
     parser.add_argument(
-        ARGBRV_SRC, ARGSTR_SRC,
+        '-s', ARGSTR_SRC,
         type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_SRC,
             existcheck_fn=os.path.exists,
             existcheck_reqval=True,
@@ -253,7 +269,7 @@ def argparser_init():
     )
 
     parser.add_argument(
-        ARGBRV_SRCLIST, ARGSTR_SRCLIST,
+        '-sl', ARGSTR_SRCLIST,
         type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_SRCLIST,
             existcheck_fn=os.path.isfile,
             existcheck_reqval=True,
@@ -261,13 +277,14 @@ def argparser_init():
         nargs='+',
         action='append',
         help=' '.join([
-            "Path to textfile list of 'src_path[{}dst_path]' copy tasks to be performed.".format(ARGSTR_SRCLIST_DELIM),
-            ARGHLP_SRCLIST_FORMAT,
+            "Path to output file copy, or directory in which copies of source files will be created.",
+            "To provide a destination directory that overrides all destination paths in source lists,",
+            "use the {} argument instead of this argument.".format(ARGSTR_DSTDIR_GLOBAL)
         ])
     )
 
     parser.add_argument(
-        ARGBRV_SRCLIST_ROOTED, ARGSTR_SRCLIST_ROOTED,
+        '-slr', ARGSTR_SRCLIST_ROOTED,
         type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_SRCLIST_ROOTED,
             existcheck_fn=os.path.isfile,
             existcheck_reqval=True,
@@ -281,18 +298,36 @@ def argparser_init():
     )
 
     parser.add_argument(
-        ARGBRV_DST, ARGSTR_DST,
-        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_DST,
+        '-slp', ARGSTR_SRCLIST_PREFIX,
+        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_SRCLIST_PREFIX,
+            existcheck_fn=os.path.isdir,
+            existcheck_reqval=True),
+        help=' '.join([
+            "Directory path to append to all source paths in {} copy task lists.".format(ARGSTR_SRCLIST),
+        ])
+    )
+
+    parser.add_argument(
+        '-slpd', ARGSTR_SRCLIST_PREFIX_DST,
+        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_SRCLIST_PREFIX_DST,
+            existcheck_fn=os.path.isfile,
+            existcheck_reqval=False,
             accesscheck_reqtrue=os.W_OK,
             accesscheck_parent_if_dne=True),
         help=' '.join([
-            "Path to output file copy, or directory in which copies of source files will be created.",
-            "To provide a destination directory that overrides all destination paths in source lists,",
-            "use the {} argument instead of this argument.".format(ARGSTR_DSTDIR_GLOBAL)
+            "Directory path to append to all destination paths in {} copy task lists.".format(ARGSTR_SRCLIST),
         ])
     )
+
     parser.add_argument(
-        ARGBRV_DSTDIR_GLOBAL, ARGSTR_DSTDIR_GLOBAL,
+        '-d', ARGSTR_DST,
+        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_DST,
+            accesscheck_reqtrue=os.W_OK,
+            accesscheck_parent_if_dne=True),
+        help="Same as positional argument '{}'".format(ARGSTR_DST_POS),
+    )
+    parser.add_argument(
+        '-dg', ARGSTR_DSTDIR_GLOBAL,
         type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_DSTDIR_GLOBAL,
             existcheck_fn=os.path.isfile,
             existcheck_reqval=False,
@@ -305,7 +340,7 @@ def argparser_init():
     )
 
     parser.add_argument(
-        ARGBRV_COPY_METHOD, ARGSTR_COPY_METHOD,
+        '-cm', ARGSTR_COPY_METHOD,
         type=str,
         choices=ARGCHO_COPY_METHOD,
         default=ARGCHO_COPY_METHOD_LINK,
@@ -314,13 +349,14 @@ def argparser_init():
         ])
     )
     parser.add_argument(
-        ARGBRV_OVERWRITE, ARGSTR_OVERWRITE,
+        '-o', ARGSTR_OVERWRITE,
         action='store_true',
+        # TODO: Write help string
         help="[write me]"
     )
 
     parser.add_argument(
-        ARGBRV_MINDEPTH, ARGSTR_MINDEPTH,
+        '-d0', ARGSTR_MINDEPTH,
         type=psu_at.ARGTYPE_NUM(argstr=ARGSTR_MINDEPTH,
             numeric_type=int, allow_neg=False, allow_zero=True, allow_inf=True),
         default=ARGDEF_MINDEPTH,
@@ -331,7 +367,7 @@ def argparser_init():
     )
 
     parser.add_argument(
-        ARGBRV_MAXDEPTH, ARGSTR_MAXDEPTH,
+        '-d1', ARGSTR_MAXDEPTH,
         type=psu_at.ARGTYPE_NUM(argstr=ARGSTR_MAXDEPTH,
             numeric_type=int, allow_neg=False, allow_zero=True, allow_inf=True),
         default=ARGDEF_MAXDEPTH,
@@ -342,7 +378,7 @@ def argparser_init():
     )
 
     parser.add_argument(
-        ARGBRV_SYNC_TREE, ARGSTR_SYNC_TREE,
+        '-st', ARGSTR_SYNC_TREE,
         action='store_true',
         help=' '.join([
             "Copy contents of source directories directly into destination directories."
@@ -351,7 +387,7 @@ def argparser_init():
         ])
     )
     parser.add_argument(
-        ARGBRV_TRANSPLANT_TREE, ARGSTR_TRANSPLANT_TREE,
+        '-tt', ARGSTR_TRANSPLANT_TREE,
         action='store_true',
         help=' '.join([
             "Copy contents of source directories into a folder under destination directories",
@@ -361,7 +397,7 @@ def argparser_init():
         ])
     )
     parser.add_argument(
-        ARGBRV_COLLAPSE_TREE, ARGSTR_COLLAPSE_TREE,
+        '-ct', ARGSTR_COLLAPSE_TREE,
         action='store_true',
         help=' '.join([
             "Copy all files within source directories into destination directories one level deep,"
@@ -394,17 +430,19 @@ def argparser_init():
     )
 
     parser.add_argument(
-        ARGBRV_QUIET, ARGSTR_QUIET,
+        '-q', ARGSTR_QUIET,
         action='store_true',
+        # TODO: Write help string
         help="[write me]"
     )
     parser.add_argument(
-        ARGBRV_DEBUG, ARGSTR_DEBUG,
+        '-db', ARGSTR_DEBUG,
         action='store_true',
+        # TODO: Write help string
         help="[write me]"
     )
     parser.add_argument(
-        ARGBRV_DRYRUN, ARGSTR_DRYRUN,
+        '-dr', ARGSTR_DRYRUN,
         action='store_true',
         help="Print actions without executing."
     )
@@ -418,11 +456,8 @@ def main():
     ### Parse script arguments
     pre_argparse()
     arg_parser = argparser_init()
-    try:
-        args = ArgumentPasser(PYTHON_EXE, SCRIPT_FILE, arg_parser, sys.argv)
-    except cerr.ScriptArgumentError as e:
-        arg_parser.error(str(e))
-        args = None
+    args = psu_act.parse_args(PYTHON_EXE, SCRIPT_FILE, arg_parser, sys.argv, REMOVABLE_ARGS)
+
 
     # setup_logging(outfile='out.txt', errfile='err.txt')
 
@@ -445,6 +480,8 @@ def main():
     psu_act.check_mut_excl_arggrp(args, ARGCOL_MUT_EXCL)
 
     arg_dst = args.get(ARGSTR_DST) if args.get(ARGSTR_DST) is not None else args.get(ARGSTR_DSTDIR_GLOBAL)
+    arg_srclist_prefix = args.get(ARGSTR_SRCLIST_PREFIX)
+    arg_srclist_prefix_dst = args.get(ARGSTR_SRCLIST_PREFIX_DST)
     arg_srclist_noglob = args.get(ARGSTR_SRCLIST_NOGLOB)
 
     if args.get(ARGSTR_SYNC_TREE):
@@ -507,18 +544,23 @@ def main():
                     tasklist.header = None
             except cerr.DimensionError as e:
                 traceback.print_exc()
-                arg_parser.error("{} textfiles must be structured in one of the following "
-                                 "formats:\n".format(ARGSTR_SRCLIST) + ARGHLP_SRCLIST_FORMAT)
+                arg_parser.error(
+                    "{} {}; {} textfiles must be structured in one of the following formats:\n{}".format(
+                        ARGSTR_SRCLIST, srclist_file, ARGSTR_SRCLIST, ARGHLP_SRCLIST_FORMAT
+                ))
 
             tasklist_src_dne = []
+            task_type_is_list = (len(tasklist.tasks) > 0 and type(tasklist.tasks[0]) is list)
             for task in tasklist.tasks:
-                task_src = task if type(task) is not list else task[0]
+                task_src = task[0] if task_type_is_list else task
+                if arg_srclist_prefix is not None:
+                    task_src = os.path.join(arg_srclist_prefix, task_src)
                 if (not arg_srclist_noglob and '*' in task_src) or os.path.exists(task_src):
                     pass
                 else:
                     tasklist_src_dne.append(task_src)
             if len(tasklist_src_dne) > 0:
-                arg_parser.error("{} {} source paths do not exist:\n{}".format(
+                arg_parser.error("{} {}; source paths do not exist:\n{}".format(
                     ARGSTR_SRCLIST, srclist_file, '\n'.join(tasklist_src_dne)
                 ))
 
@@ -544,12 +586,12 @@ def main():
                         dst_rootdir = srclist_header[1] if len(srclist_header) == 2 else None
                         if not os.path.isdir(src_rootdir):
                             arg_parser.error(
-                                "{} {} source root directory in header must be an existing directory: {}".format(
+                                "{} {}; source root directory in header must be an existing directory: {}".format(
                                 ARGSTR_SRCLIST_ROOTED, srclist_file, src_rootdir
                             ))
                         if dst_rootdir is not None and os.path.isfile(dst_rootdir):
                             arg_parser.error(
-                                "{} {} destination root directory in header cannot be an existing file: {}".format(
+                                "{} {}; destination root directory in header cannot be an existing file: {}".format(
                                 ARGSTR_SRCLIST_ROOTED, srclist_file, dst_rootdir
                             ))
                 tasklist = psu_tl.Tasklist(
@@ -559,18 +601,28 @@ def main():
                 )
             except cerr.DimensionError as e:
                 traceback.print_exc()
-                arg_parser.error("{} textfiles must be structured as follows:\n".format(ARGSTR_SRCLIST_ROOTED)
-                                 + ARGHLP_SRCLIST_ROOTED_FORMAT)
+                arg_parser.error("{} {}; {} textfiles must be structured as follows:\n{}".format(
+                    ARGSTR_SRCLIST_ROOTED, srclist_file, ARGSTR_SRCLIST_ROOTED, ARGHLP_SRCLIST_ROOTED_FORMAT
+                ))
 
             tasklist_src_dne = []
+            task_type_is_list = (len(tasklist.tasks) > 0 and type(tasklist.tasks[0]) is list)
             for task in tasklist.tasks:
-                task_src = task if type(task) is not list else task[0]
+                if task_type_is_list:
+                    task_src, task_dst_rootdir = task
+                    if os.path.isfile(task_dst_rootdir):
+                        arg_parser.error(
+                            "{} {}; destination root directory cannot be an existing file: {}".format(
+                            ARGSTR_SRCLIST_ROOTED, tasklist.tasklist_file, task_dst_rootdir
+                        ))
+                else:
+                    task_src = task
                 if (not arg_srclist_noglob and '*' in task_src) or os.path.exists(task_src):
                     pass
                 else:
                     tasklist_src_dne.append(task_src)
             if len(tasklist_src_dne) > 0:
-                arg_parser.error("{} {} source paths do not exist:\n{}".format(
+                arg_parser.error("{} {}; source paths do not exist:\n{}".format(
                     ARGSTR_SRCLIST_ROOTED, srclist_file, '\n'.join(tasklist_src_dne)
                 ))
 
@@ -598,8 +650,8 @@ def main():
     for tasklist in srclist_tasklists:
 
         tasklist_dst_can_be_file = False
-        if arg_dst is not None and args.get(ARGSTR_DSTDIR_GLOBAL) is not None:
-            tasklist_dst_dir = arg_dst
+        if args.get(ARGSTR_DSTDIR_GLOBAL) is not None:
+            tasklist_dst_dir = args.get(ARGSTR_DSTDIR_GLOBAL)
         elif tasklist.header is not None:
             tasklist_dst_dir = tasklist.header[1]
         else:
@@ -618,15 +670,29 @@ def main():
             else:
                 dst_path_type = PATH_TYPE_UNKNOWN
 
+        task_type_is_list = (len(tasklist.tasks) > 0 and type(tasklist.tasks[0]) is list)
         for task in tasklist.tasks:
-            if type(task) is list:
+            if task_type_is_list:
                 src_path = task[0]
-                dst_path = tasklist_dst_dir if tasklist_dst_dir is not None else task[1]
+                if tasklist_dst_dir is not None:
+                    dst_path = tasklist_dst_dir
+                else:
+                    dst_path = task[1]
+                    if arg_srclist_prefix_dst is not None:
+                        dst_path = os.path.join(arg_srclist_prefix_dst, dst_path)
             else:
                 src_path = task
                 dst_path = tasklist_dst_dir if tasklist_dst_dir is not None else arg_dst
+
+            if arg_srclist_prefix is not None:
+                src_path = os.path.join(arg_srclist_prefix, src_path)
+
             if not arg_srclist_noglob and '*' in src_path:
                 src_path_glob = glob.glob(src_path)
+                if len(src_path_glob) == 0:
+                    warning("{} {}; no source files found matching pattern: {}".format(
+                        ARGSTR_SRCLIST, tasklist.tasklist_file, src_path
+                    ))
                 for src_path in src_path_glob:
                     dst_path = adjust_dst_path(
                         src_path, dst_path, dst_can_be_file=False, dst_path_type=dst_path_type,
@@ -645,12 +711,12 @@ def main():
 
         if not os.path.isdir(src_rootdir):
             arg_parser.error(
-                "{} {} source root directory in header must be an existing directory: {}".format(
+                "{} {}; source root directory in header must be an existing directory: {}".format(
                 ARGSTR_SRCLIST_ROOTED, tasklist.tasklist_file, src_rootdir
             ))
 
-        if arg_dst is not None and args.get(ARGSTR_DSTDIR_GLOBAL) is not None:
-            tasklist_dst_rootdir = arg_dst
+        if args.get(ARGSTR_DSTDIR_GLOBAL) is not None:
+            tasklist_dst_rootdir = args.get(ARGSTR_DSTDIR_GLOBAL)
         elif len(tasklist.header) == 2:
             tasklist_dst_rootdir = tasklist.header[1]
         else:
@@ -665,20 +731,32 @@ def main():
         if tasklist_dst_rootdir is not None and sync_mode == ARGMOD_SYNC_MODE_TRANSPLANT_TREE:
             tasklist_dst_rootdir = os.path.join(tasklist_dst_rootdir, src_rootdir_dirname)
 
+        task_type_is_list = (len(tasklist.tasks) > 0 and type(tasklist.tasks[0]) is list)
         for task in tasklist.tasks:
-            if type(task) is list:
+            if task_type_is_list:
                 src_path = task[0]
                 dst_rootdir = tasklist_dst_rootdir if tasklist_dst_rootdir is not None else task[1]
             else:
                 src_path = task
                 dst_rootdir = tasklist_dst_rootdir if tasklist_dst_rootdir is not None else arg_dst
+
             if os.path.isfile(dst_rootdir):
                 arg_parser.error(
-                    "{} {} destination root directory in header cannot be an existing file: {}".format(
+                    "{} {}; destination root directory cannot be an existing file: {}".format(
                     ARGSTR_SRCLIST_ROOTED, tasklist.tasklist_file, dst_rootdir
                 ))
+
+            if not src_path.startswith(src_rootdir):
+                # Assume source path is relative from the source root directory
+                src_path_from_root = src_path
+                src_path = os.path.join(src_rootdir, src_path_from_root)
+
             if not arg_srclist_noglob and '*' in src_path:
                 src_path_glob = glob.glob(src_path)
+                if len(src_path_glob) == 0:
+                    warning("{} {}; no source files found matching pattern: {}".format(
+                        ARGSTR_SRCLIST_ROOTED, tasklist.tasklist_file, src_path
+                    ))
             else:
                 src_path_glob = [src_path]
             for src_path in src_path_glob:
