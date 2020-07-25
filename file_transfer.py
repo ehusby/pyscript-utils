@@ -98,13 +98,26 @@ ARGSTR_QUIET = '--quiet'
 ARGSTR_DEBUG = '--debug'
 ARGSTR_DRYRUN = '--dryrun'
 
-## "Removable" arguments
-#  Typically these are positional argument strings that are doubled as optional arguments,
-#  and are thus not required to be provided as positional arguments if optional arguments are provided.
-REMOVABLE_ARGS = [
-    ARGSTR_SRC_POS,
-    ARGSTR_DST_POS
-]
+## "Doubled" arguments
+#  Optional arguments that are doubled as positional arguments for ease of use.
+#  The positional arguments should not be provided if the optional arguments are provided.
+DOUBLED_ARGS = {
+    ARGSTR_SRC: ARGSTR_SRC_POS,
+    ARGSTR_DST: ARGSTR_DST_POS,
+}
+
+## Argument groups ("ARGGRP_" lists of "ARGSTR_" argument strings)
+ARGGRP_SRC = [ARGSTR_SRC, ARGSTR_SRCLIST, ARGSTR_SRCLIST_ROOTED]
+ARGGRP_DST = [ARGSTR_DST, ARGSTR_DSTDIR_GLOBAL]
+ARGGRP_SYNC_MODE = [ARGSTR_SYNC_TREE, ARGSTR_TRANSPLANT_TREE]
+ARGGRP_OUTDIR = []
+ARGGRP_OUTDIR = ARGGRP_OUTDIR + psu_sched.ARGGRP_OUTDIR  # comment-out if not using scheduler arguments
+
+## Doubled argument restricted optional argument groups
+DOUBLED_ARGS_RESTRICTED_OPTGRP = {
+    'source': ARGGRP_SRC,
+    'destination': ARGGRP_DST,
+}
 
 ## Argument choices (declare "ARGCHO_{ARGSTR}_{option}" options followed by list of all options as "ARGCHO_{ARGSTR}")
 ARGCHO_COPY_METHOD_COPY = 'copy'
@@ -136,12 +149,6 @@ ARGMOD_SYNC_MODE_TRANSPLANT_TREE = 2
 
 ## Argument choice settings
 
-## Argument groups ("ARGGRP_" lists of "ARGSTR_" argument strings)
-ARGGRP_SRC = [ARGSTR_SRC, ARGSTR_SRCLIST, ARGSTR_SRCLIST_ROOTED]
-ARGGRP_DST = [ARGSTR_DST, ARGSTR_DSTDIR_GLOBAL]
-ARGGRP_SYNC_MODE = [ARGSTR_SYNC_TREE, ARGSTR_TRANSPLANT_TREE]
-ARGGRP_OUTDIR = []
-ARGGRP_OUTDIR = ARGGRP_OUTDIR + psu_sched.ARGGRP_OUTDIR  # comment-out if not using scheduler arguments
 
 ## Argument collections ("ARGCOL_" lists of "ARGGRP_" argument strings)
 ARGCOL_MUT_EXCL = [ARGGRP_DST, ARGGRP_SYNC_MODE]
@@ -456,7 +463,8 @@ def main():
     ### Parse script arguments
     pre_argparse()
     arg_parser = argparser_init()
-    args = psu_act.parse_args(PYTHON_EXE, SCRIPT_FILE, arg_parser, sys.argv, REMOVABLE_ARGS)
+    args = psu_act.parse_args(PYTHON_EXE, SCRIPT_FILE, arg_parser, sys.argv,
+                              DOUBLED_ARGS, DOUBLED_ARGS_RESTRICTED_OPTGRP)
 
 
     # setup_logging(outfile='out.txt', errfile='err.txt')

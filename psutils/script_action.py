@@ -70,10 +70,20 @@ def check_mut_excl_arggrp(args, argcol_mut_excl):
             ))
 
 
-def parse_args(python_exe, script_file, arg_parser, sys_argv, removeable_args=[]):
+def parse_args(python_exe, script_file, arg_parser, sys_argv,
+               doubled_args=dict(), doubled_args_restricted_optgrp=None):
+
+    args = ArgumentPasser(python_exe, script_file, arg_parser, sys_argv, remove_args=[], parse=False)
+
+    if doubled_args is None:
+        doubled_args = dict()
+    removable_args_opt = list(doubled_args.keys())
+    removable_args_pos = list(doubled_args.values())
+
+    removable_args = removable_args_pos if len(removable_args_pos) > 0 else None
 
     remove_args = None
-    if removeable_args is None or (type(removeable_args) is list and len(removeable_args) == 0):
+    if removable_args is None:
         try_removing_args = False
         stream_capture_func = with_noop
     else:
@@ -83,14 +93,26 @@ def parse_args(python_exe, script_file, arg_parser, sys_argv, removeable_args=[]
     while True:
         try:
             with stream_capture_func() as _:
-                args = ArgumentPasser(python_exe, script_file, arg_parser, sys_argv, remove_args)
+                args.parse()
+            if removable_args is not None and remove_args is None:
+                if len(set(removable_args_opt).intersection(args.provided_opt_args)) > 0:
+                    raise cerr.ScriptArgumentError(
+                        "positional arguments {} cannot be mixed with their counterpart "
+                        "optional arguments {}".format(removable_args_pos, removable_args_opt))
+                if doubled_args_restricted_optgrp is not None:
+                    for arggrp_desc, arggrp in doubled_args_restricted_optgrp.items():
+                        if len(set(arggrp).intersection(args.provided_opt_args)) > 0:
+                            raise cerr.ScriptArgumentError(
+                                "positional arguments {} cannot be mixed with '{}' type "
+                                "optional arguments {}".format(removable_args_pos, arggrp_desc, arggrp))
             return args
         except cerr.ScriptArgumentError as e:
             arg_parser.error(str(e))
         except SystemExit as e:
-            if try_removing_args and remove_args is not removeable_args:
-                remove_args = removeable_args
+            if try_removing_args and remove_args is not removable_args:
+                remove_args = removable_args
                 stream_capture_func = with_noop
+                args.remove_args(remove_args)
             else:
                 raise
 

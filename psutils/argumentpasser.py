@@ -28,49 +28,94 @@ class CustomArgumentParser(argparse.ArgumentParser):
 
 class ArgumentPasser(object):
 
-    def __init__(self, executable_path, script_file, parser, sys_argv=[''], remove_args=[], parse=True):
+    def __init__(self, executable_path, script_file, parser, sys_argv=[''],
+                 remove_args=[], parse=True):
         self.exe = executable_path
         self.script_file = script_file
         self.script_fname = os.path.basename(script_file)
         self.parser = parser
         self.sys_argv = list(sys_argv)
         self.script_run_cmd = ' '.join(self.sys_argv)
-        self.parsed = parse
+        self.removed_args = list(remove_args)
+        self.parsed = False
 
-        if remove_args is None or (type(remove_args) is list and len(remove_args) == 0):
-            pass
-        else:
-            if type(remove_args) is str:
-                remove_args = [remove_args]
-            argstr2varstr = self._make_argstr2varstr_dict()
-            varstr2action = self._make_varstr2action_dict()
-            for remove_argstr in remove_args:
-                remove_action = varstr2action[argstr2varstr[remove_argstr]]
-                self.parser._remove_action(remove_action)
+        self._update_arg_dict()
+        self.provided_opt_args = self._get_provided_opt_args()
 
-        self.argstr_pos = self._find_pos_args()
-        self.argstr2varstr = self._make_argstr2varstr_dict()
-        self.varstr2argstr = self._make_varstr2argstr_dict()
-        self.varstr2action = self._make_varstr2action_dict()
-        self.provided_opt_args = self._find_provided_opt_args()
-
-        if parse:
-            self.vars = self.parser.parse_args()
-            self.vars_dict = vars(self.vars)
-        else:
-            self.vars = None
-            self.vars_dict = {varstr: None for varstr in self.varstr2argstr}
-
-        self._fix_bool_plus_args()
-
+        self.vars = None
+        self.vars_dict = {varstr: None for varstr in self.varstr2argstr}
         self.cmd_optarg_base = None
         self.cmd = None
-        self._update_cmd_base()
+
+        if remove_args is not None:
+            self.remove_args(remove_args)
+
+        if parse:
+            self.parse()
 
     def __deepcopy__(self, memodict):
-        args = ArgumentPasser(self.exe, self.script_file, self.parser, self.sys_argv, self.parsed)
+        args = ArgumentPasser(self.exe, self.script_file, self.parser, self.sys_argv, parse=self.parsed)
         args.vars_dict = copy.deepcopy(self.vars_dict)
         return args
+
+    def _update_arg_dict(self):
+        pos_argstr = []
+        opt_argstr = []
+        varstr2action = {}
+        varstr2argstr = {}
+        argstr2action = {}
+        argstr2varstr = {}
+        argbrv2argstr = {}
+        pos_actions = [act for act in self.parser._actions if len(act.option_strings) == 0]
+        opt_actions = [act for act in self.parser._actions if len(act.option_strings)  > 0]
+        for act in opt_actions + pos_actions:
+            varstr = act.dest
+            argstr_list = act.option_strings if len(act.option_strings) > 0 else [varstr.replace('_', '-')]
+            argstr_main = max(argstr_list, key=len)
+            varstr2action[varstr] = act
+            varstr2argstr[varstr] = argstr_main
+            for argstr in argstr_list:
+                argstr2action[argstr] = act
+                argstr2varstr[argstr] = varstr
+                argbrv2argstr[argstr] = argstr_main
+                if len(act.option_strings) == 0:
+                    pos_argstr.append(argstr)
+                else:
+                    opt_argstr.append(argstr)
+        self.pos_argstr = pos_argstr
+        self.opt_argstr = opt_argstr
+        self.varstr2action = varstr2action
+        self.varstr2argstr = varstr2argstr
+        self.argstr2action = argstr2action
+        self.argstr2varstr = argstr2varstr
+        self.argbrv2argstr = argbrv2argstr
+
+    def _get_provided_opt_args(self):
+        provided_opt_args = []
+        for token in self.sys_argv:
+            potential_argstr = token.split('=')[0]
+            if potential_argstr in self.argbrv2argstr:
+                provided_opt_args.append(self.argbrv2argstr[potential_argstr])
+        return provided_opt_args
+
+    def remove_args(self, *argstrs):
+        if len(argstrs) == 1 and type(argstrs[0]) in (tuple, list):
+            argstrs = argstrs[0]
+        for remove_argstr in argstrs:
+            remove_action = self.argstr2action[remove_argstr]
+            self.parser._remove_action(remove_action)
+        self.removed_args.extend(argstrs)
+        self._update_arg_dict()
+
+    def parse(self):
+        self.vars = self.parser.parse_args()
+        self.vars_dict = vars(self.vars)
+        self._fix_bool_plus_args()
+        self._update_cmd_base()
+        self.parsed = True
+
+    def provided(self, argstr):
+        return argstr in self.provided_opt_args
 
     def get_as_list(self, *argstrs):
         if len(argstrs) < 1:
@@ -79,8 +124,9 @@ class ArgumentPasser(object):
             argstrs = argstrs[0]
         argstrs_invalid = set(argstrs).difference(set(self.argstr2varstr))
         if argstrs_invalid:
-            raise cerr.InvalidArgumentError("This {} object does not have the following "
-                                       "argument strings: {}".format(type(self).__name__, list(argstrs_invalid)))
+            raise cerr.InvalidArgumentError(
+                "This {} object does not have the following argument strings: {}".format(
+                    type(self).__name__, list(argstrs_invalid)))
         values = [self.vars_dict[self.argstr2varstr[argstr]] for argstr in argstrs]
         return values
 
@@ -110,10 +156,11 @@ class ArgumentPasser(object):
                     elif acttype in (argparse._StoreTrueAction, argparse._StoreFalseAction):
                         newval = (acttype is argparse._StoreTrueAction)
                     else:
-                        raise cerr.InvalidArgumentError("Setting non-boolean argument string '{}' requires "
-                                                   "a non-None `newval` value".format(argstr))
+                        raise cerr.InvalidArgumentError(
+                            "Setting non-boolean argument string '{}' requires "
+                            "a non-None `newval` value".format(argstr))
                 self.vars_dict[self.argstr2varstr[argstr]] = newval
-        if set(argstr_list).issubset(set(self.argstr_pos)):
+        if set(argstr_list).issubset(set(self.pos_argstr)):
             self._update_cmd()
         else:
             self._update_cmd_base()
@@ -133,59 +180,10 @@ class ArgumentPasser(object):
             else:
                 newval = None
             self.vars_dict[self.argstr2varstr[argstr]] = newval
-        if set(argstrs).issubset(set(self.argstr_pos)):
+        if set(argstrs).issubset(set(self.pos_argstr)):
             self._update_cmd()
         else:
             self._update_cmd_base()
-
-    def provided(self, argstr):
-        return argstr in self.provided_opt_args
-
-    def _make_varstr2action_dict(self):
-        return {act.dest: act for act in reversed(self.parser._actions)}
-
-    def _make_varstr2argstr_dict(self):
-        varstr2argstr = {}
-        for act in reversed(self.parser._actions):
-            if len(act.option_strings) == 0:
-                argstr = act.dest.replace('_', '-')
-            else:
-                argstr = max(act.option_strings, key=len)
-            varstr2argstr[act.dest] = argstr
-        return varstr2argstr
-
-    def _make_argstr2varstr_dict(self):
-        argstr2varstr = {}
-        for act in reversed(self.parser._actions):
-            if len(act.option_strings) == 0:
-                argstr = act.dest.replace('_', '-')
-                argstr2varstr[argstr] = act.dest
-            else:
-                for argstr in act.option_strings:
-                    argstr2varstr[argstr] = act.dest
-        return argstr2varstr
-
-    def _make_argstr2action_dict(self):
-        argstr2action = {}
-        for act in reversed(self.parser._actions):
-            if len(act.option_strings) == 0:
-                argstr = act.dest.replace('_', '-')
-                argstr2action[argstr] = act
-            else:
-                for argstr in act.option_strings:
-                    argstr2action[argstr] = act
-        return argstr2action
-
-    def _find_pos_args(self):
-        return [act.dest.replace('_', '-') for act in self.parser._actions if len(act.option_strings) == 0]
-
-    def _find_provided_opt_args(self):
-        provided_opt_args = []
-        for token in self.sys_argv:
-            potential_argstr = token.split('=')[0]
-            if potential_argstr in self.argstr2varstr:
-                provided_opt_args.append(self.varstr2argstr[self.argstr2varstr[potential_argstr]])
-        return provided_opt_args
 
     def _fix_bool_plus_args(self):
         for varstr in self.vars_dict:
@@ -210,7 +208,7 @@ class ArgumentPasser(object):
         arg_list = []
         for varstr, val in self.vars_dict.items():
             argstr = self.varstr2argstr[varstr]
-            if argstr not in self.argstr_pos and val is not None:
+            if argstr not in self.pos_argstr and val is not None:
                 if isinstance(val, bool):
                     action = self.varstr2action[varstr]
                     acttype = type(action)
@@ -229,7 +227,7 @@ class ArgumentPasser(object):
 
     def _update_cmd(self):
         posarg_list = []
-        for argstr in self.argstr_pos:
+        for argstr in self.pos_argstr:
             varstr = self.argstr2varstr[argstr]
             val = self.vars_dict[varstr]
             if val is not None:
