@@ -1,8 +1,10 @@
 
 import copy
+import collections
 import fnmatch as fnmatch_module
 import os
 import re
+import sys
 import traceback
 
 import psutils.custom_errors as cerr
@@ -24,21 +26,31 @@ except AttributeError:
 WALK_REMATCH_PARTIAL_FUNCTION_DEFAULT = re.search
 WALK_RESUB_FUNCTION_DEFAULT = re.sub
 
+FIND_RETURN_FILES = 1
+FIND_RETURN_DIRS = 2
+FIND_RETURN_MIX = 3
+FIND_RETURN_ITEMS_DICT = {
+    'files': FIND_RETURN_FILES,
+    'dirs' : FIND_RETURN_DIRS,
+    'mix'  : FIND_RETURN_MIX
+}
 
-def walk_simple(srcdir, mindepth=0, maxdepth=float('inf'), list_rootdname=False, list_function=WALK_LIST_FUNCTION_DEFAULT):
+
+def walk_simple(srcdir, mindepth=0, maxdepth=float('inf'), list_srcdname=False, list_function=WALK_LIST_FUNCTION_DEFAULT):
     if not os.path.isdir(srcdir):
         raise cerr.InvalidArgumentError("`srcdir` directory does not exist: {}".format(srcdir))
     if mindepth < 0 or maxdepth < 0:
         raise cerr.InvalidArgumentError("depth arguments must be >= 0")
     srcdir = os.path.abspath(srcdir)
-    if list_rootdname and mindepth == 0:
+    if list_srcdname and mindepth == 0:
         updir = os.path.dirname(srcdir)
         srcdname = os.path.basename(srcdir)
         yield updir, [srcdname], []
-    for x in _walk(srcdir, 1, mindepth, maxdepth, list_function):
+    for x in _walk_simple(srcdir, 1, mindepth, maxdepth, list_function):
         yield x
 
-def _walk(rootdir, depth, mindepth, maxdepth, list_function):
+
+def _walk_simple(rootdir, depth, mindepth, maxdepth, list_function):
     if depth > maxdepth:
         return
     dnames, fnames = [], []
@@ -66,14 +78,15 @@ class WalkObject(object):
         fsub=None, dsub=None,
         copy_method=None, copy_overwrite=False, transplant_tree=False, collapse_tree=False,
         copy_dryrun=False, copy_quiet=False, copy_debug=False,
+        symlink_dirs=False,
         mkdir_upon_file_copy=False,
         allow_nonstd_shprogs=False,
         copy_shcmd_fmtstr=None,
         list_function=None,
         rematch_function=None,
         resub_function=None,
-        rematch_partial=False):
-
+        rematch_partial=False
+    ):
         if mindepth < 0 or maxdepth < 0 or (dmatch_maxdepth is not None and dmatch_maxdepth < 0):
             raise cerr.InvalidArgumentError("depth arguments must be >= 0")
         if copy_method and copy_shcmd_fmtstr:
@@ -88,15 +101,8 @@ class WalkObject(object):
         if list_function is not None and list_function not in WALK_LIST_FUNCTION_AVAIL:
             raise cerr.InvalidArgumentError("`list_function` must be either os.listdir or os.scandir")
 
-        if dmatch is None and dmatch_re is None:
-            dmatch_nomaxdepth = True
-        else:
-            if copy_method is None:
-                dmatch_nomaxdepth = (dmatch_maxdepth is None)
-            else:
-                dmatch_nomaxdepth = False
         if dmatch_maxdepth is None:
-            dmatch_maxdepth = float('inf')
+            dmatch_maxdepth = float('inf') if copy_method is not None else -1
 
         list_function_given, rematch_function_given, resub_function_given = [
             item is not None for item in [
@@ -113,7 +119,7 @@ class WalkObject(object):
         fmatch, fmatch_re, fexcl, fexcl_re, \
         dmatch, dmatch_re, dexcl, dexcl_re, \
         fsub, dsub = [
-            item if (item is None or type(item) is list) else (list(item) if type(item) in tuple else [item]) for item in [
+            item if (item is None or type(item) is list) else (list(item) if type(item) is tuple else [item]) for item in [
                 fmatch, fmatch_re, fexcl, fexcl_re,
                 dmatch, dmatch_re, dexcl, dexcl_re,
                 fsub, dsub
@@ -203,14 +209,26 @@ class WalkObject(object):
                         raise cerr.InvalidArgumentError("`copy_method` shell program '{}' is nonstandard and not allowed".format(copy_method.copy_shprog))
             else:
                 copy_method = psu_cm.CopyMethod(copy_method)
-            copy_method.set_options(copy_overwrite=copy_overwrite, dryrun=copy_dryrun, verbose=(not copy_quiet), debug=copy_debug)
+            copy_method.set_options(
+                copy_overwrite=copy_overwrite,
+                copy_dryrun=copy_dryrun,
+                copy_verbose=(not copy_quiet),
+                copy_debug=copy_debug
+            )
+
+        if symlink_dirs and copy_shcmd_fmtstr is None:
+            if copy_method is not None and (
+                   (copy_method in (psu_cm.COPY_METHOD_SYMLINK, psu_cm.COPY_METHOD_SYMLINK_SYSTEM))
+                or (copy_method.action_verb in ('symlinking', 'linking'))):
+                pass
+            else:
+                raise cerr.InvalidArgumentError("`symlink_dirs` can only be True when a symlink copy method is provided")
 
         self.srcdir = None
         self.dstdir = None
         self.mindepth = mindepth
         self.maxdepth = maxdepth
         self.dmatch_maxdepth = dmatch_maxdepth
-        self.dmatch_nomaxdepth = dmatch_nomaxdepth
         self.fname_rematch = fname_rematch
         self.fname_reexcl = fname_reexcl
         self.dname_rematch = dname_rematch
@@ -218,10 +236,11 @@ class WalkObject(object):
         self.fname_resub = fname_resub
         self.dname_resub = dname_resub
         self.copy_method = copy_method
-        self.copy_method_inst = copy_method
+        self.copy_method_inst = None if copy_method is None else copy.copy(self.copy_method)
         self.transplant_tree = transplant_tree
         self.collapse_tree = collapse_tree
         self.collapse_tree_inst = collapse_tree
+        self.symlink_dirs = symlink_dirs
         self.mkdir_upon_file_copy = mkdir_upon_file_copy
         self.list_function = list_function
         self.rematch_function = rematch_function
@@ -229,9 +248,8 @@ class WalkObject(object):
 
     def walk(self,
              srcdir, dstdir=None,
-             copy_overwrite=None, transplant_tree=None, collapse_tree=None):
-        if copy_overwrite is None:
-            copy_overwrite = self.copy_method.copy_overwrite
+             copy_overwrite=None, transplant_tree=None, collapse_tree=None,
+             copy_dryrun=None, copy_quiet=None, copy_debug=None):
         if transplant_tree is None:
             transplant_tree = self.transplant_tree
         if collapse_tree is None:
@@ -247,44 +265,52 @@ class WalkObject(object):
 
         self.srcdir = srcdir
         self.dstdir = dstdir
-        if copy_overwrite != self.copy_method.copy_overwrite:
-            self.copy_method_inst = copy.copy(self.copy_method)
-            self.copy_method_inst.set_options(copy_overwrite=copy_overwrite)
-        else:
-            self.copy_method_inst = self.copy_method
         self.collapse_tree_inst = collapse_tree
+        if self.copy_method is None:
+            self.copy_method_inst = None
+        else:
+            self.copy_method_inst = copy.copy(self.copy_method)
+            self.copy_method_inst.set_options(
+                copy_overwrite=copy_overwrite,
+                copy_dryrun=copy_dryrun,
+                copy_verbose=(copy_quiet if copy_quiet is None else not copy_quiet),
+                copy_debug=copy_debug
+            )
 
-        if self.copy_method is not None and self.dstdir is not None and not os.path.isdir(self.dstdir):
+        if self.copy_method_inst is not None and self.dstdir is not None and not os.path.isdir(self.dstdir):
             if not self.copy_method_inst.dryrun:
                 os.makedirs(self.dstdir)
 
         depth = 1
-        dmatch_depth = -1 if self.dmatch_nomaxdepth else 0
+        dmatch_depth = -1 if not self.dname_rematch else 0
 
         for x in self._walk(self.srcdir, self.dstdir, depth, dmatch_depth):
             yield x
 
-    def _walk(self, srcdir, dstdir, depth, dmatch_depth):
-        if depth > self.maxdepth:
+    def _walk(self, srcdir, dstdir, depth, dmatch_depth=-1):
+        if depth > self.maxdepth and not (1 <= dmatch_depth <= self.dmatch_maxdepth):
             return
+
         if depth == 1 and dmatch_depth == 0:
             srcdname = os.path.basename(srcdir)
             srcdname_match = True
-            if self.dname_rematch:
+            if self.dname_reexcl:
+                for re_pattern in self.dname_reexcl:
+                    srcdname_match = (not self.rematch_function(re_pattern, srcdname))
+                    if not srcdname_match:
+                        break
+                if not srcdname_match:
+                    return
+            if self.dname_rematch and srcdname_match:
                 srcdname_match = False
                 for re_pattern in self.dname_rematch:
                     srcdname_match = self.rematch_function(re_pattern, srcdname)
                     if srcdname_match:
                         break
-            if self.dname_reexcl and srcdname_match:
-                for re_pattern in self.dname_reexcl:
-                    srcdname_match = (not self.rematch_function(re_pattern, srcdname))
-                    if not srcdname_match:
-                        break
             if srcdname_match:
                 dmatch_depth = 1
 
-        srcdname_passes = (dmatch_depth <= self.dmatch_maxdepth and dmatch_depth != 0)
+        srcdir_passes = (dmatch_depth <= self.dmatch_maxdepth and dmatch_depth != 0)
 
         if dstdir is None or self.copy_method_inst is None:
             dstdir_exists = False
@@ -292,15 +318,16 @@ class WalkObject(object):
             dstdir_exists = True
         elif self.mkdir_upon_file_copy:
             dstdir_exists = False
-        elif srcdname_passes:
+        elif srcdir_passes:
             if not self.copy_method_inst.dryrun:
                 os.makedirs(dstdir)
             dstdir_exists = True
         else:
             dstdir_exists = False
 
-        dnames, fnames_filtered = [], []
-        dnames_pass = [] if (self.dname_rematch or self.dname_reexcl) else None
+        dnames_filtered, fnames_filtered = [], []
+        dnames_filtered_pass = [] if self.dname_rematch else None
+
         for dirent in self.list_function(srcdir):
             if self.list_function is os.listdir:
                 pname = dirent
@@ -308,26 +335,30 @@ class WalkObject(object):
             else:
                 pname = dirent.name
                 dirent_is_dir = dirent.is_dir()
+
             if dirent_is_dir:
-                dnames.append(pname)
-                if dnames_pass is not None:
-                    dname_match = True
-                    if self.dname_rematch:
-                        dname_match = False
-                        for re_pattern in self.dname_rematch:
-                            dname_match = self.rematch_function(re_pattern, pname)
-                            if dname_match:
-                                break
-                    if self.dname_reexcl and dname_match:
-                        for re_pattern in self.dname_reexcl:
-                            dname_match = (not self.rematch_function(re_pattern, pname))
-                            if not dname_match:
-                                break
+                dname_match = True
+                if self.dname_reexcl:
+                    for re_pattern in self.dname_reexcl:
+                        dname_match = (not self.rematch_function(re_pattern, pname))
+                        if not dname_match:
+                            break
+                    if not dname_match:
+                        continue
+                if dname_match:
+                    dnames_filtered.append(pname)
+                if self.dname_rematch:
+                    dname_match = False
+                    for re_pattern in self.dname_rematch:
+                        dname_match = self.rematch_function(re_pattern, pname)
+                        if dname_match:
+                            break
                     if dname_match:
-                        dnames_pass.append(True)
+                        dnames_filtered_pass.append(True)
                     else:
-                        dnames_pass.append(False)
-            elif srcdname_passes:
+                        dnames_filtered_pass.append(False)
+
+            elif srcdir_passes:
                 fname_match = True
                 if self.fname_rematch:
                     fname_match = False
@@ -344,7 +375,8 @@ class WalkObject(object):
                     fnames_filtered.append(pname)
 
         if depth >= self.mindepth:
-            if srcdname_passes and self.copy_method_inst is not None and dstdir is not None:
+
+            if srcdir_passes and self.copy_method_inst is not None and dstdir is not None:
                 if not dstdir_exists and (not self.mkdir_upon_file_copy or fnames_filtered):
                     if not self.copy_method_inst.dryrun:
                         os.makedirs(dstdir)
@@ -356,19 +388,34 @@ class WalkObject(object):
                             fname = self.resub_function(re_pattern, repl_str, fname)
                     dstfile = os.path.join(dstdir, fname)
                     self.copy_method_inst.copy(srcfile, dstfile)
-            if srcdname_passes and not self.dmatch_nomaxdepth:
-                dnames_filtered = dnames
-            else:
-                dnames_filtered = dnames if dnames_pass is None else [dn for i, dn in enumerate(dnames) if dnames_pass[i]]
-            yield srcdir, dnames_filtered, fnames_filtered
 
-        if dnames and depth < self.maxdepth:
+            dnames_yield = (     dnames_filtered if (dnames_filtered_pass is None or srcdir_passes)
+                            else [dn for i, dn in enumerate(dnames_filtered) if dnames_filtered_pass[i]])
+
+            yield srcdir, dnames_yield, fnames_filtered
+
+        if dnames_filtered and (depth < self.maxdepth or dmatch_depth != -1):
             depth_next = depth + 1
-            dmatch_depth_next_pass = dmatch_depth if dmatch_depth <  0 else 1
-            dmatch_depth_next_fail = dmatch_depth if dmatch_depth <= 0 else dmatch_depth + 1
-            for i, dn in enumerate(dnames):
+
+            if dmatch_depth == -1:
+                pass
+            elif depth <= self.maxdepth:
+                dmatch_depth_next_pass = 1
+                dmatch_depth_next_fail = 0 if dmatch_depth <= 0 else dmatch_depth + 1
+            else:
+                dmatch_depth_next_pass = dmatch_depth + 1
+                dmatch_depth_next_fail = dmatch_depth_next_pass
+
+            for i, dn in enumerate(dnames_filtered):
+                if depth == self.maxdepth and not (dmatch_depth > 0 or dnames_filtered_pass[i]):
+                    continue
+
                 srcdir_next = os.path.join(srcdir, dn)
-                dmatch_depth_next = dmatch_depth_next_pass if dnames_pass is None or dnames_pass[i] else dmatch_depth_next_fail
+                if dmatch_depth == -1:
+                    dmatch_depth_next = -1
+                else:
+                    dmatch_depth_next = dmatch_depth_next_pass if (dnames_filtered_pass is None or dnames_filtered_pass[i]) else dmatch_depth_next_fail
+
                 if dstdir is None:
                     dstdir_next = None
                 elif self.collapse_tree_inst:
@@ -379,24 +426,31 @@ class WalkObject(object):
                         for re_pattern, repl_str in self.dname_resub:
                             dstdname_next = self.resub_function(re_pattern, repl_str, dstdname_next)
                     dstdir_next = os.path.join(dstdir, dstdname_next)
-                for x in self._walk(srcdir_next, dstdir_next, depth_next, dmatch_depth_next):
-                    yield x
+
+                if self.symlink_dirs and dnames_filtered_pass[i] and depth >= self.mindepth:
+                    self.copy_method_inst.copy(srcdir_next, dstdir_next)
+                else:
+                    for x in self._walk(srcdir_next, dstdir_next, depth_next, dmatch_depth_next):
+                        yield x
 
 
-def walk(srcdir, dstdir=None, list_rootdname=False,
-        mindepth=0, maxdepth=float('inf'), dmatch_maxdepth=None,
-        fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
-        dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
-        fsub=None, dsub=None,
-        copy_method=None, copy_overwrite=False, transplant_tree=False, collapse_tree=False,
-        copy_dryrun=False, copy_quiet=False, copy_debug=False,
-        mkdir_upon_file_copy=False,
-        allow_nonstd_shprogs=False,
-        copy_shcmd_fmtstr=None,
-        list_function=None,
-        rematch_function=None,
-        resub_function=None,
-        rematch_partial=False):
+def _walk(
+    srcdir, dstdir=None, list_srcdname=False,
+    mindepth=0, maxdepth=float('inf'), dmatch_maxdepth=None,
+    fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
+    dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
+    fsub=None, dsub=None,
+    copy_method=None, copy_overwrite=False, transplant_tree=False, collapse_tree=False,
+    copy_dryrun=False, copy_quiet=False, copy_debug=False,
+    symlink_dirs=False,
+    mkdir_upon_file_copy=False,
+    allow_nonstd_shprogs=False,
+    copy_shcmd_fmtstr=None,
+    list_function=None,
+    rematch_function=None,
+    resub_function=None,
+    rematch_partial=False
+):
     if not os.path.isdir(srcdir):
         raise cerr.InvalidArgumentError("`srcdir` directory does not exist: {}".format(srcdir))
     # if dstdir is not None and copy_method is None:
@@ -410,6 +464,7 @@ def walk(srcdir, dstdir=None, list_rootdname=False,
         fsub, dsub,
         copy_method, copy_overwrite, transplant_tree, collapse_tree,
         copy_dryrun, copy_quiet, copy_debug,
+        symlink_dirs,
         mkdir_upon_file_copy,
         allow_nonstd_shprogs,
         copy_shcmd_fmtstr,
@@ -418,9 +473,203 @@ def walk(srcdir, dstdir=None, list_rootdname=False,
         resub_function,
         rematch_partial
     )
-    if list_rootdname and mindepth == 0:
+    if list_srcdname and mindepth == 0:
         updir = os.path.dirname(srcdir)
         srcdname = os.path.basename(srcdir)
         yield updir, [srcdname], []
     for x in walk_object.walk(srcdir, dstdir, copy_overwrite, transplant_tree, collapse_tree):
         yield x
+
+
+def walk(
+    srcdir, dstdir=None, list_srcdname=False,
+    mindepth=0, maxdepth=float('inf'), dmatch_maxdepth=None,
+    fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
+    dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
+    list_function=None,
+    rematch_function=None,
+    rematch_partial=False
+):
+    for x in _walk(
+        srcdir, dstdir, list_srcdname,
+        mindepth, maxdepth, dmatch_maxdepth,
+        fmatch, fmatch_re, fexcl, fexcl_re,
+        dmatch, dmatch_re, dexcl, dexcl_re,
+        list_function=list_function,
+        rematch_function=rematch_function,
+        rematch_partial=rematch_partial):
+        yield x
+
+
+def find(
+    srcdir, dstdir=None, list_srcdname=False,
+    vreturn=None, vyield=None, print_findings=False,
+    mindepth=0, maxdepth=float('inf'), dmatch_maxdepth=None,
+    fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
+    dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
+    fsub=None, dsub=None,
+    copy_method=None, copy_overwrite=False, transplant_tree=False, collapse_tree=False,
+    copy_dryrun=False, copy_quiet=False, copy_debug=False,
+    symlink_dirs=False,
+    mkdir_upon_file_copy=False,
+    allow_nonstd_shprogs=False,
+    copy_shcmd_fmtstr=None,
+    list_function=None,
+    rematch_function=None,
+    resub_function=None,
+    rematch_partial=False
+):
+    if vreturn is None and vyield is None:
+        ffilter = ([arg is not None and len(arg) != 0 for arg in [fmatch, fmatch_re, fexcl, fexcl_re, fsub]].count(True) > 0)
+        dfilter = ([arg is not None and len(arg) != 0 for arg in [dmatch, dmatch_re, dexcl, dexcl_re, dsub]].count(True) > 0)
+        if ffilter and dfilter:
+            vreturn = FIND_RETURN_MIX
+        elif ffilter:
+            vreturn = FIND_RETURN_FILES
+        elif dfilter:
+            vreturn = FIND_RETURN_DIRS
+        else:
+            vreturn = FIND_RETURN_MIX
+
+    return_items = [item_list for item_list in [vreturn, vyield] if item_list is not None]
+    if len(return_items) != 1:
+        raise cerr.InvalidArgumentError("One and only one of (`vreturn`, `vyield`) arguments must be provided")
+    if type(return_items[0]) in (tuple, list):
+        return_items = list(return_items[0])
+    for i, item in enumerate(return_items):
+        if type(item) is str:
+            if item in FIND_RETURN_ITEMS_DICT:
+                item = FIND_RETURN_ITEMS_DICT[item]
+            else:
+                raise cerr.InvalidArgumentError("`vreturn`/`vyield` string arguments must be one of {}, "
+                                                "but was {}".format(list(FIND_RETURN_ITEMS_DICT.keys()), item))
+        if type(item) is int and item not in list(FIND_RETURN_ITEMS_DICT.values()):
+            raise cerr.InvalidArgumentError("`vreturn`/`vyield` int arguments must be one of {}, "
+                                            "but was {}".format(list(FIND_RETURN_ITEMS_DICT.values()), item))
+        return_items[i] = item
+    if 1 <= len(set(return_items)) <= 2:
+        pass
+    else:
+        raise cerr.InvalidArgumentError("`vreturn`/`vyield` argument contains duplicate items")
+
+    return_mix = (FIND_RETURN_MIX in return_items)
+    return_mix_only = (return_items == [FIND_RETURN_MIX])
+
+    dirs_all = []
+    files_all = []
+    mix_all = []
+    def _find_iter():
+        for rootdir, dnames, fnames in _walk(
+            srcdir, dstdir, list_srcdname,
+            mindepth, maxdepth, dmatch_maxdepth,
+            fmatch, fmatch_re, fexcl, fexcl_re,
+            dmatch, dmatch_re, dexcl, dexcl_re,
+            fsub, dsub,
+            copy_method, copy_overwrite, transplant_tree, collapse_tree,
+            copy_dryrun, copy_quiet, copy_debug,
+            symlink_dirs,
+            mkdir_upon_file_copy,
+            allow_nonstd_shprogs,
+            copy_shcmd_fmtstr,
+            list_function,
+            rematch_function,
+            resub_function,
+            rematch_partial
+        ):
+            dirs = [os.path.join(rootdir, dn) for dn in dnames] if (FIND_RETURN_DIRS in return_items or return_mix) else None
+            files = [os.path.join(rootdir, fn) for fn in fnames] if (FIND_RETURN_FILES in return_items or return_mix) else None
+            if return_mix:
+                mix = dirs if return_mix_only else list(dirs)
+                mix.extend(files)
+                if return_mix_only:
+                    dirs, files = None, None
+            else:
+                mix = None
+
+            if print_findings:
+                if mix:
+                    for p in mix:
+                        sys.stdout.write(p+'\n')
+                else:
+                    if dirs:
+                        for d in dirs:
+                            sys.stdout.write(d+'\n')
+                    if files:
+                        for f in files:
+                            sys.stdout.write(f+'\n')
+
+            if vreturn:
+                if dirs:
+                    dirs_all.extend(dirs)
+                if files:
+                    files_all.extend(files)
+                if mix:
+                    mix_all.extend(mix)
+
+            if vyield:
+                if len(return_items) == 1:
+                    item = return_items[0]
+                    yield_results = files if item == FIND_RETURN_FILES else (dirs if item == FIND_RETURN_DIRS else mix)
+                    for p in yield_results:
+                        yield p
+                else:
+                    yield_results = []
+                    for item in return_items:
+                        yield_results.append(files if item == FIND_RETURN_FILES else (dirs if item == FIND_RETURN_DIRS else mix))
+                    yield yield_results
+
+    if vyield:
+        return _find_iter()
+
+    if vreturn:
+        collections.deque(_find_iter(), maxlen=0)
+        if len(return_items) == 1:
+            item = return_items[0]
+            return_results = files_all if item == FIND_RETURN_FILES else (dirs_all if item == FIND_RETURN_FILES else mix_all)
+        else:
+            return_results = []
+            for item in return_items:
+                return_results.append(files_all if item == FIND_RETURN_FILES else (dirs_all if item == FIND_RETURN_FILES else mix_all))
+        return return_results
+
+
+def copy_tree(
+    srcdir, dstdir, copy_method='copy',
+    overwrite=False, transplant_tree=False, collapse_tree=False,
+    mindepth=0, maxdepth=float('inf'), dmatch_maxdepth=None,
+    fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
+    dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
+    fsub=None, dsub=None,
+    vreturn=None, vyield=None, print_findings=False, list_srcdname=False,
+    dryrun=False, quiet=False, debug=False,
+    symlink_dirs=False,
+    mkdir_upon_file_copy=False,
+    allow_nonstd_shprogs=False,
+    copy_shcmd_fmtstr=None,
+    list_function=None,
+    rematch_function=None,
+    resub_function=None,
+    rematch_partial=False
+):
+    if dstdir is None:
+        raise cerr.InvalidArgumentError("`dstdir` cannot be None")
+    if copy_method is None:
+        raise cerr.InvalidArgumentError("`copy_method` cannot be None")
+    find(
+        srcdir, dstdir, list_srcdname,
+        vreturn, vyield, print_findings,
+        mindepth, maxdepth, dmatch_maxdepth,
+        fmatch, fmatch_re, fexcl, fexcl_re,
+        dmatch, dmatch_re, dexcl, dexcl_re,
+        fsub, dsub,
+        copy_method, overwrite, transplant_tree, collapse_tree,
+        dryrun, quiet, debug,
+        symlink_dirs,
+        mkdir_upon_file_copy,
+        allow_nonstd_shprogs,
+        copy_shcmd_fmtstr,
+        list_function,
+        rematch_function,
+        resub_function,
+        rematch_partial
+    )

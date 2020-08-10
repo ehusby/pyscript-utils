@@ -5,7 +5,7 @@ import sys
 
 import psutils.custom_errors as cerr
 
-from psutils.walk import walk
+from psutils.walk import _walk
 
 
 FIND_RETURN_FILES = 1
@@ -18,21 +18,23 @@ FIND_RETURN_ITEMS_DICT = {
 }
 
 
-def find(srcdir, dstdir=None,
-        vreturn=None, vyield=None, debug=False,
-        mindepth=0, maxdepth=float('inf'), dmatch_maxdepth=None,
-        fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
-        dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
-        fsub=None, dsub=None,
-        copy_method=None, copy_overwrite=False, transplant_tree=False, collapse_tree=False,
-        copy_dryrun=False, copy_quiet=False, copy_debug=False,
-        mkdir_upon_file_copy=False,
-        allow_nonstd_shprogs=False,
-        copy_shcmd_fmtstr=None,
-        list_function=None,
-        rematch_function=None,
-        resub_function=None,
-        rematch_partial=False):
+def find(
+    srcdir, dstdir=None, list_srcdname=True,
+    vreturn=None, vyield=None, print_findings=False,
+    mindepth=0, maxdepth=float('inf'), dmatch_maxdepth=None,
+    fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
+    dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
+    fsub=None, dsub=None,
+    copy_method=None, copy_overwrite=False, transplant_tree=False, collapse_tree=False,
+    copy_dryrun=False, copy_quiet=False, copy_debug=False,
+    mkdir_upon_file_copy=False,
+    allow_nonstd_shprogs=False,
+    copy_shcmd_fmtstr=None,
+    list_function=None,
+    rematch_function=None,
+    resub_function=None,
+    rematch_partial=False
+):
     if vreturn is None and vyield is None:
         ffilter = ([arg is not None for arg in [fmatch, fmatch_re, fexcl, fexcl_re, fsub]].count(True) > 0)
         dfilter = ([arg is not None for arg in [dmatch, dmatch_re, dexcl, dexcl_re, dsub]].count(True) > 0)
@@ -56,10 +58,10 @@ def find(srcdir, dstdir=None,
                 item = FIND_RETURN_ITEMS_DICT[item]
             else:
                 raise cerr.InvalidArgumentError("`vreturn`/`vyield` string arguments must be one of {}, "
-                                           "but was {}".format(list(FIND_RETURN_ITEMS_DICT.keys()), item))
+                                                "but was {}".format(list(FIND_RETURN_ITEMS_DICT.keys()), item))
         if type(item) is int and item not in list(FIND_RETURN_ITEMS_DICT.values()):
             raise cerr.InvalidArgumentError("`vreturn`/`vyield` int arguments must be one of {}, "
-                                       "but was {}".format(list(FIND_RETURN_ITEMS_DICT.values()), item))
+                                            "but was {}".format(list(FIND_RETURN_ITEMS_DICT.values()), item))
         return_items[i] = item
     if 1 <= len(set(return_items)) <= 2:
         pass
@@ -73,8 +75,8 @@ def find(srcdir, dstdir=None,
     files_all = []
     mix_all = []
     def _find_iter():
-        for rootdir, dnames, fnames in walk(
-            srcdir, dstdir, True,
+        for rootdir, dnames, fnames in _walk(
+            srcdir, dstdir, list_srcdname,
             mindepth, maxdepth, dmatch_maxdepth,
             fmatch, fmatch_re, fexcl, fexcl_re,
             dmatch, dmatch_re, dexcl, dexcl_re,
@@ -99,7 +101,7 @@ def find(srcdir, dstdir=None,
             else:
                 mix = None
 
-            if debug:
+            if print_findings:
                 if mix:
                     for p in mix:
                         sys.stdout.write(p+'\n')

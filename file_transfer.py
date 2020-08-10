@@ -2,6 +2,7 @@
 # Erik Husby; Polar Geospatial Center, University of Minnesota; 2020
 
 
+from __future__ import print_function
 from __future__ import division
 import argparse
 import copy
@@ -45,19 +46,18 @@ if psu_globals.PYTHON_VERSION < VersionString(PYTHON_VERSION_ACCEPTED_MIN):
 
 ### PSU imports ###
 
-from psutils.logger import setup_logging
-setup_logging()
 from psutils.print_methods_logging import *
-
 from psutils.argumentpasser import RawTextArgumentDefaultsHelpFormatter
+
+import psutils.logger as psu_log
 import psutils.argtype as psu_at
 import psutils.script_action as psu_act
+
 import psutils.scheduler as psu_sched
+import psutils.tasklist as psu_tl
 
 import psutils.copymethod as psu_cm
-import psutils.tasklist as psu_tl
 import psutils.string as psu_str
-from psutils.walk import WalkObject
 
 ##############################
 
@@ -65,10 +65,12 @@ from psutils.walk import WalkObject
 
 ## Python Standard Library
 import glob
+import logging
 
 ## Non-Standard PyPI
 
 ## Non-PyPI
+from psutils.walk import WalkObject
 
 ##############################
 
@@ -89,9 +91,19 @@ ARGSTR_COPY_METHOD = '--copy-method'
 ARGSTR_OVERWRITE = '--overwrite'
 ARGSTR_MINDEPTH = '--mindepth'
 ARGSTR_MAXDEPTH = '--maxdepth'
+ARGSTR_DMATCH_MAXDEPTH = '--dmatch-maxdepth'
 ARGSTR_SYNC_TREE = '--sync-tree'
 ARGSTR_TRANSPLANT_TREE = '--transplant-tree'
 ARGSTR_COLLAPSE_TREE = '--collapse-tree'
+ARGSTR_SYMLINK_FILES = '--symlink-files'
+ARGSTR_FMATCH = '--fmatch'
+ARGSTR_FMATCH_RE = '--fmatch-re'
+ARGSTR_FEXCL = '--fexcl'
+ARGSTR_FEXCL_RE = '--fexcl-re'
+ARGSTR_DMATCH = '--dmatch'
+ARGSTR_DMATCH_RE = '--dmatch-re'
+ARGSTR_DEXCL = '--dexcl'
+ARGSTR_DEXCL_RE = '--dexcl-re'
 ARGSTR_SRCLIST_DELIM = '--srclist-delim'
 ARGSTR_SRCLIST_NOGLOB = '--srclist-noglob'
 ARGSTR_QUIET = '--quiet'
@@ -110,14 +122,38 @@ DOUBLED_ARGS = {
 ARGGRP_SRC = [ARGSTR_SRC, ARGSTR_SRCLIST, ARGSTR_SRCLIST_ROOTED]
 ARGGRP_DST = [ARGSTR_DST, ARGSTR_DSTDIR_GLOBAL]
 ARGGRP_SYNC_MODE = [ARGSTR_SYNC_TREE, ARGSTR_TRANSPLANT_TREE]
+ARGGRP_FILEMATCH = [
+    ARGSTR_FMATCH, ARGSTR_FMATCH_RE, ARGSTR_FEXCL, ARGSTR_FEXCL_RE,
+    ARGSTR_DMATCH, ARGSTR_DMATCH_RE, ARGSTR_DEXCL, ARGSTR_DEXCL_RE,
+]
 ARGGRP_OUTDIR = []
-ARGGRP_OUTDIR = ARGGRP_OUTDIR + psu_sched.ARGGRP_OUTDIR  # comment-out if not using scheduler arguments
+ARGGRP_OUTDIR += psu_log.ARGGRP_OUTDIR  # comment-out if not using logging arguments
+ARGGRP_OUTDIR += psu_sched.ARGGRP_OUTDIR  # comment-out if not using scheduler arguments
+
+## Argument collections ("ARGCOL_" lists of "ARGGRP_" argument strings)
+ARGCOL_MUT_EXCL_SET = []
+ARGCOL_MUT_EXCL_SET += psu_log.ARGCOL_MUT_EXCL_SET  # comment-out if not using logging arguments
+ARGCOL_MUT_EXCL_SET += [
+    ARGGRP_DST,
+    ARGGRP_SYNC_MODE,
+    [ARGSTR_QUIET, ARGSTR_DEBUG],
+    [ARGSTR_QUIET, ARGSTR_DRYRUN],
+]
+ARGCOL_MUT_EXCL_PROVIDED = list(ARGCOL_MUT_EXCL_SET)
+ARGCOL_MUT_EXCL_PROVIDED += psu_log.ARGCOL_MUT_EXCL_PROVIDED  # comment-out if not using logging arguments
 
 ## Doubled argument restricted optional argument groups
 DOUBLED_ARGS_RESTRICTED_OPTGRP = {
     'source': ARGGRP_SRC,
     'destination': ARGGRP_DST,
 }
+
+## Argument modes ("ARGMOD_", used for mutually exclusive arguments that control the same mechanic)
+# (It's generally better to use a single argument with multiple choices, but sometimes we want
+#  to use multiple `action='store_true'` arguments instead.)
+ARGMOD_SYNC_MODE_NULL = 0
+ARGMOD_SYNC_MODE_SYNC_TREE = 1
+ARGMOD_SYNC_MODE_TRANSPLANT_TREE = 2
 
 ## Argument choices (declare "ARGCHO_{ARGSTR}_{option}" options followed by list of all options as "ARGCHO_{ARGSTR}")
 ARGCHO_COPY_METHOD_COPY = 'copy'
@@ -130,32 +166,25 @@ ARGCHO_COPY_METHOD = [
     ARGCHO_COPY_METHOD_LINK,
     ARGCHO_COPY_METHOD_SYMLINK
 ]
-# Argument choice object mapping (dict of "ARGCHO_" argument options)
-COPY_METHOD_FUNCTION_DICT = {
+# Argument choice object mapping ("ARGMAP_" dict of "ARGCHO_" argument options)
+ARGMAP_COPY_METHOD_FUNC = {
     ARGCHO_COPY_METHOD_COPY: psu_cm.COPY_METHOD_COPY_DEFAULT,
     ARGCHO_COPY_METHOD_MOVE: psu_cm.COPY_METHOD_MOVE,
     ARGCHO_COPY_METHOD_LINK: psu_cm.COPY_METHOD_HARDLINK,
     ARGCHO_COPY_METHOD_SYMLINK: psu_cm.COPY_METHOD_SYMLINK
 }
 
-## Argument modes ("ARGMOD_", used for mutually exclusive arguments that control the same mechanic)
-# (It's generally better to use a single argument with multiple choices, but sometimes we want
-#  to use multiple `action='store_true'` arguments instead.)
-ARGMOD_SYNC_MODE_NULL = 0
-ARGMOD_SYNC_MODE_SYNC_TREE = 1
-ARGMOD_SYNC_MODE_TRANSPLANT_TREE = 2
-
 ## Segregation of argument choices (lists of related argument choices)
 
-## Argument choice settings
-
-
-## Argument collections ("ARGCOL_" lists of "ARGGRP_" argument strings)
-ARGCOL_MUT_EXCL = [ARGGRP_DST, ARGGRP_SYNC_MODE]
+## Argument settings
+ARGSET_FLAGS = []
+ARGSET_FLAGS += psu_log.ARGSET_FLAGS
+ARGSET_CHOICES = []
 
 ## Argument defaults ("ARGDEF_")
 ARGDEF_MINDEPTH = 0
 ARGDEF_MAXDEPTH = psu_at.ARGNUM_POS_INF
+ARGDEF_DMATCH_MAXDEPTH = psu_at.ARGNUM_POS_INF
 ARGDEF_BUNDLEDIR = os.path.join(os.path.expanduser('~'), 'scratch', 'task_bundles')
 ARGDEF_SRCLIST_DELIM = ','
 ARGDEF_JOB_ABBREV = 'Copy'
@@ -167,6 +196,16 @@ ARGHLP_SRCLIST_FORMAT = None  # set globally in pre_argparse()
 ARGHLP_SRCLIST_ROOTED_FORMAT = None  # set globally in pre_argparse()
 
 ##############################
+
+### Logging argument defaults ###
+
+ARGDEF_LOG_LEVEL = psu_log.ARGCHO_LOG_LEVEL_INFO
+ARGDEF_LOG_TASK_LEVEL = psu_log.ARGCHO_LOG_LEVEL_INFO
+ARGDEF_LOG_OUTFILE = None
+ARGDEF_LOG_ERRFILE = None
+ARGDEF_LOG_TASK_OUTEXT = None
+ARGDEF_LOG_TASK_ERREXT = None
+ARGDEF_LOG_OUTDIR = None
 
 ### Scheduler settings ###
 
@@ -227,7 +266,8 @@ def argparser_init():
     global ARGHLP_SRCLIST_FORMAT, ARGHLP_SRCLIST_ROOTED_FORMAT
 
     parser = argparse.ArgumentParser(
-        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        # formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         # allow_abbrev=False,
         description=' '.join([
             "Copy, link, or move a single file/directory, whole file tree, or list of files/directories.",
@@ -372,7 +412,6 @@ def argparser_init():
             "\nThe depth of a source directory's immediate contents is 1.",
         ])
     )
-
     parser.add_argument(
         '-d1', ARGSTR_MAXDEPTH,
         type=psu_at.ARGTYPE_NUM(argstr=ARGSTR_MAXDEPTH,
@@ -381,6 +420,15 @@ def argparser_init():
         help=' '.join([
             "Maximum depth of recursive search into source directories for files to copy.",
             "\nThe depth of a source directory's immediate contents is 1.",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_DMATCH_MAXDEPTH,
+        type=psu_at.ARGTYPE_NUM(argstr=ARGSTR_DMATCH_MAXDEPTH,
+            numeric_type=int, allow_neg=False, allow_zero=True, allow_inf=True),
+        default=ARGDEF_DMATCH_MAXDEPTH,
+        help=' '.join([
+            "[write me]",
         ])
     )
 
@@ -411,6 +459,89 @@ def argparser_init():
             "effectively collapsing the copied source directory tree."
         ])
     )
+    parser.add_argument(
+        ARGSTR_SYMLINK_FILES,
+        action='store_true',
+        help=' '.join([
+            "When {}={}, recurse into source folders and create symbolic links within the".format(ARGSTR_COPY_METHOD, ARGCHO_COPY_METHOD_SYMLINK),
+            "destination directory pointing to the files within, instead of creating symbolic"
+            "directory links within the destination pointing to source folders."
+        ])
+    )
+
+    parser.add_argument(
+        ARGSTR_FMATCH,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_FMATCH_RE,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_FEXCL,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_FEXCL_RE,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+
+    parser.add_argument(
+        ARGSTR_DMATCH,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_DMATCH_RE,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_DEXCL,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_DEXCL_RE,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
 
     parser.add_argument(
         ARGSTR_SRCLIST_DELIM,
@@ -436,6 +567,9 @@ def argparser_init():
         ARGDEF_BUNDLEDIR,
     )
 
+    # Comment-out the following line if not using logging arguments
+    psu_log.add_logging_arguments(parser)
+
     parser.add_argument(
         '-q', ARGSTR_QUIET,
         action='store_true',
@@ -459,33 +593,42 @@ def argparser_init():
 
 def main():
     global SYNC_MODE_GLOBAL
+    # from psutils.print_methods_logging import *
 
     ### Parse script arguments
     pre_argparse()
     arg_parser = argparser_init()
     args = psu_act.parse_args(PYTHON_EXE, SCRIPT_FILE, arg_parser, sys.argv,
                               DOUBLED_ARGS, DOUBLED_ARGS_RESTRICTED_OPTGRP)
+    ### Setup logging
+    psu_log.PSUTILS_LOGGER.handlers = []
+    psu_log.setup_logging(handler_level=(logging.DEBUG if args.get(ARGSTR_DEBUG) else logging.INFO))
+    psu_act.setup_outfile_logging(args)
+    logging_level_task = psu_log.ARGMAP_LOG_LEVEL_LOGGING_FUNC[args.get(psu_log.ARGSTR_LOG_TASK_LEVEL)]
 
-
-    # setup_logging(outfile='out.txt', errfile='err.txt')
+    ### Apply usual argument adjustments
+    psu_act.apply_argument_settings(args, ARGSET_FLAGS, ARGSET_CHOICES)
+    psu_act.set_default_jobscript(args)
 
 
     ### Further parse/adjust script argument values
 
     ## Restructure provided source arguments into flat lists
-    for src_argstr in ARGGRP_SRC:
-        if args.get(src_argstr) is not None:
-            src_list_combined = []
-            for src_list in args.get(src_argstr):
-                src_list_combined.extend(src_list)
-            args.set(src_argstr, src_list_combined)
+    psu_act.flatten_nargs_plus_action_append_lists(args, ARGGRP_SRC, ARGGRP_FILEMATCH)
 
-    psu_act.set_default_jobscript(args)
+
+    ## Print script preamble when done adjusting argument values
+    script_preamble = psu_act.get_preamble(args, sys.argv)
+    if args.get(ARGSTR_DEBUG):
+        print(script_preamble)
+    if args.get(psu_log.ARGSTR_LOG_OUTFILE) is not None:
+        with open(args.get(psu_log.ARGSTR_LOG_OUTFILE), 'a') as fp_outlog:
+            print(script_preamble, file=fp_outlog)
 
 
     ### Validate argument values
 
-    psu_act.check_mut_excl_arggrp(args, ARGCOL_MUT_EXCL)
+    psu_act.check_mutually_exclusive_args(args, ARGCOL_MUT_EXCL_SET, ARGCOL_MUT_EXCL_PROVIDED)
 
     arg_dst = args.get(ARGSTR_DST) if args.get(ARGSTR_DST) is not None else args.get(ARGSTR_DSTDIR_GLOBAL)
     arg_srclist_prefix = args.get(ARGSTR_SRCLIST_PREFIX)
@@ -823,16 +966,20 @@ def main():
 
 def perform_tasks(args, task_list):
 
-    copy_method_obj = copy.copy(COPY_METHOD_FUNCTION_DICT[args.get(ARGSTR_COPY_METHOD)])
+    copy_method_obj = copy.copy(ARGMAP_COPY_METHOD_FUNC[args.get(ARGSTR_COPY_METHOD)])
     copy_method_obj.set_options(
         copy_overwrite=args.get(ARGSTR_OVERWRITE),
-        dryrun=args.get(ARGSTR_DRYRUN),
-        verbose=(not args.get(ARGSTR_QUIET)),
-        debug=args.get(ARGSTR_DEBUG)
+        copy_dryrun=args.get(ARGSTR_DRYRUN),
+        copy_verbose=(not args.get(ARGSTR_QUIET)),
+        copy_debug=args.get(ARGSTR_DEBUG)
     )
 
     walk_object = WalkObject(
-        mindepth=args.get(ARGSTR_MINDEPTH), maxdepth=args.get(ARGSTR_MAXDEPTH),
+        mindepth=args.get(ARGSTR_MINDEPTH), maxdepth=args.get(ARGSTR_MAXDEPTH), dmatch_maxdepth=args.get(ARGSTR_DMATCH_MAXDEPTH),
+        fmatch=args.get(ARGSTR_FMATCH), fmatch_re=args.get(ARGSTR_FMATCH_RE),
+        fexcl=args.get(ARGSTR_FEXCL), fexcl_re=args.get(ARGSTR_FEXCL_RE),
+        dmatch=args.get(ARGSTR_DMATCH), dmatch_re=args.get(ARGSTR_DMATCH_RE),
+        dexcl=args.get(ARGSTR_DEXCL), dexcl_re=args.get(ARGSTR_DEXCL_RE),
         copy_method=copy_method_obj, copy_overwrite=args.get(ARGSTR_OVERWRITE),
         transplant_tree=False, collapse_tree=args.get(ARGSTR_COLLAPSE_TREE),
         copy_dryrun=args.get(ARGSTR_DRYRUN), copy_quiet=args.get(ARGSTR_QUIET), copy_debug=args.get(ARGSTR_DEBUG)

@@ -59,6 +59,7 @@ class ArgumentPasser(object):
         return args
 
     def _update_arg_dict(self):
+        all_argstr = []
         pos_argstr = []
         opt_argstr = []
         varstr2action = {}
@@ -78,10 +79,12 @@ class ArgumentPasser(object):
                 argstr2action[argstr] = act
                 argstr2varstr[argstr] = varstr
                 argbrv2argstr[argstr] = argstr_main
+                all_argstr.append(argstr)
                 if len(act.option_strings) == 0:
                     pos_argstr.append(argstr)
                 else:
                     opt_argstr.append(argstr)
+        self.all_argstr = all_argstr
         self.pos_argstr = pos_argstr
         self.opt_argstr = opt_argstr
         self.varstr2action = varstr2action
@@ -116,6 +119,9 @@ class ArgumentPasser(object):
 
     def provided(self, argstr):
         return argstr in self.provided_opt_args
+
+    def has(self, argstr):
+        return argstr in self.all_argstr
 
     def get_as_list(self, *argstrs):
         if len(argstrs) < 1:
@@ -235,7 +241,7 @@ class ArgumentPasser(object):
                     posarg_list.append(' '.join([self._argval2str(item) for item in val]))
                 else:
                     posarg_list.append(self._argval2str(val))
-        self.cmd = '{} {} {} {}'.format(self.exe, self.script_file, " ".join(posarg_list), self.cmd_optarg_base)
+        self.cmd = '{} "{}" {} {}'.format(self.exe, self.script_file, " ".join(posarg_list), self.cmd_optarg_base)
 
     def get_cmd(self):
         return self.cmd

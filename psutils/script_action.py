@@ -1,6 +1,8 @@
 
 import copy
+from datetime import datetime
 from email.mime.text import MIMEText
+import getpass
 import os
 import platform
 import smtplib
@@ -9,6 +11,7 @@ import traceback
 
 import psutils.custom_errors as cerr
 import psutils.scheduler as psu_sched
+import psutils.logger as psu_log
 from psutils.print_methods import *
 
 from psutils import PYTHON_VERSION_REQUIRED_MIN
@@ -19,17 +22,51 @@ from psutils.stream import capture_stdout_stderr
 from psutils.func import with_noop
 
 
-def send_email(to_addr, subject, body, from_addr=None):
-    if from_addr is None:
-        platform_node = platform.node()
-        from_addr = platform_node if platform_node is not None else 'your-computer'
-    msg = MIMEText(body)
-    msg['Subject'] = subject
-    msg['From'] = from_addr
-    msg['To'] = to_addr
-    s = smtplib.SMTP('localhost')
-    s.sendmail(to_addr, [to_addr], msg.as_string())
-    s.quit()
+def get_preamble(args=None, sys_argv=None):
+    if sys_argv is None:
+        sys_argv = sys.argv
+    script_preamble = """
+________________________________________________________
+________________________________________________________
+
+Python Script Log
+
+Start time: {}
+Process ID: {}
+Submitted by user: {}
+Running on system: {}
+
+Script path: {}
+Working dir: {}
+
+--- Script arguments (sys.argv) ---
+{}
+
+--- ArgumentPasser command ---
+{}
+________________________________________________________
+""".format(
+        datetime.now(),
+        os.getpid(),
+        getpass.getuser(),
+        platform.platform(),
+        args.script_file,
+        os.getcwd(),
+        ' '.join(sys_argv),
+        args.get_cmd().replace('\\', '\\\\')
+    ).lstrip()
+    return script_preamble
+
+
+def setup_outfile_logging(args):
+    logging_level = psu_log.ARGMAP_LOG_LEVEL_LOGGING_FUNC[args.get(psu_log.ARGSTR_LOG_LEVEL)]
+    log_outfile, log_errfile = args.get(psu_log.ARGSTR_LOG_OUTFILE, psu_log.ARGSTR_LOG_ERRFILE)
+
+    if log_outfile is not None and log_errfile is None:
+        log_errfile = log_outfile
+
+    if log_outfile is not None or log_errfile is not None:
+        psu_log.setup_logging(outfile=log_outfile, errfile=log_errfile, handler_level=logging_level)
 
 
 def get_script_arg_values(argstr, nvals=1, dtype=str, list_single_value=False):
@@ -47,6 +84,31 @@ def get_script_arg_values(argstr, nvals=1, dtype=str, list_single_value=False):
     return values
 
 
+def apply_argument_settings(args, argset_flags, argset_choices):
+
+    for flag_argstr, flag_settings in argset_flags:
+        if args.get(flag_argstr) is True:
+            for set_argstr, set_value in flag_settings:
+                old_value = args.get(set_argstr)
+                if args.provided(set_argstr) and old_value is not None and old_value != set_value:
+                    args.parser.error(
+                        "{} and {}='{}' arguments are mutually exclusive".format(
+                            flag_argstr, set_argstr, old_value))
+                args.set(set_argstr, set_value)
+
+    for choice_argstr, choice_settings_dict in argset_choices:
+        choice_value = args.get(choice_argstr)
+        if choice_value in choice_settings_dict:
+            choice_settings = choice_settings_dict[choice_value]
+            for set_argstr, set_value in choice_settings:
+                old_value = args.get(set_argstr)
+                if args.provided(set_argstr) and old_value is not None and old_value != set_value:
+                    args.parser.error(
+                        "{}='{}' and {}='{}' arguments are mutually exclusive".format(
+                            choice_argstr, choice_value, set_argstr, old_value))
+                args.set(set_argstr, set_value)
+
+
 def set_default_jobscript(args):
     if args.get(psu_sched.ARGSTR_SCHEDULER) is not None:
         if args.get(psu_sched.ARGSTR_JOBSCRIPT) is None:
@@ -60,10 +122,29 @@ def set_default_jobscript(args):
                 print("argument {} set automatically to: {}".format(psu_sched.ARGSTR_JOBSCRIPT, args.get(psu_sched.ARGSTR_JOBSCRIPT)))
 
 
-def check_mut_excl_arggrp(args, argcol_mut_excl):
-    for arggrp in argcol_mut_excl:
+def flatten_nargs_plus_action_append_lists(args, *argstrs):
+    for item in argstrs:
+        argstr_list = [item] if type(item) is str else item
+        for argstr in argstr_list:
+            if args.get(argstr) is not None:
+                arg_list_combined = []
+                for src_list in args.get(argstr):
+                    arg_list_combined.extend(src_list)
+                args.set(argstr, arg_list_combined)
+
+
+def check_mutually_exclusive_args(args, argcol_mut_excl_set, argcol_mut_excl_provided):
+
+    for arggrp in argcol_mut_excl_set:
         if [args.get(argstr) is True if type(args.get(argstr)) is bool else
             args.get(argstr) is not None for argstr in arggrp].count(True) > 1:
+            args.parser.error("{} arguments are mutually exclusive{}".format(
+                "{} and {}".format(*arggrp) if len(arggrp) == 2 else "The following",
+                '' if len(arggrp) == 2 else ": {}".format(arggrp)
+            ))
+
+    for arggrp in argcol_mut_excl_provided:
+        if [args.provided(argstr) for argstr in arggrp].count(True) > 1:
             args.parser.error("{} arguments are mutually exclusive{}".format(
                 "{} and {}".format(*arggrp) if len(arggrp) == 2 else "The following",
                 '' if len(arggrp) == 2 else ": {}".format(arggrp)
@@ -139,7 +220,7 @@ def submit_tasks_to_scheduler(parent_args, parent_tasks,
     child_args.unset(psu_sched.ARGGRP_SCHEDULER)
 
     child_tasks = (parent_tasks if parent_args.get(psu_sched.ARGSTR_TASKS_PER_JOB) is None else
-        write_task_bundles(parent_tasks, parent_args.get(psu_sched.ARGSTR_TASKS_PER_JOB), parent_args.get(psu_sched.ARGSTR_BUNDLEDIR),
+        write_task_bundles(parent_tasks, parent_args.get(psu_sched.ARGSTR_TASKS_PER_JOB), parent_args.get(psu_sched.ARGSTR_JOB_BUNDLEDIR),
             '{}_{}'.format(parent_args.get(psu_sched.ARGSTR_JOB_ABBREV),
                            task_items_descr if task_items_descr is not None else child_bundle_argstr.lstrip('-')),
             task_delim=task_delim)
@@ -171,7 +252,7 @@ def submit_tasks_to_scheduler(parent_args, parent_tasks,
 
         print(cmd)
         if not dryrun:
-            subprocess.call(cmd, shell=True, cwd=parent_args.get(psu_sched.ARGSTR_LOGDIR))
+            subprocess.call(cmd, shell=True, cwd=parent_args.get(psu_sched.ARGSTR_JOB_LOGDIR))
 
 
 def handle_task_exception(args, error):
@@ -187,6 +268,19 @@ def handle_task_exception(args, error):
             "set up, try running the following command to activate a working environment",
             "in your current shell session:\n{}\n".format("source {} {}".format(psu_sched.JOBSCRIPT_INIT, args.get(psu_sched.ARGSTR_JOB_ABBREV))),
         ]))
+
+
+def send_email(to_addr, subject, body, from_addr=None):
+    if from_addr is None:
+        platform_node = platform.node()
+        from_addr = platform_node if platform_node is not None else 'your-computer'
+    msg = MIMEText(body)
+    msg['Subject'] = subject
+    msg['From'] = from_addr
+    msg['To'] = to_addr
+    s = smtplib.SMTP('localhost')
+    s.sendmail(to_addr, [to_addr], msg.as_string())
+    s.quit()
 
 
 def send_script_completion_email(args, error_trace):

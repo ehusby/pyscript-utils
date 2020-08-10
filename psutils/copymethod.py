@@ -98,15 +98,15 @@ class CopyMethod(object):
         copy_method.set_options(self.copy_overwrite, self.dryrun, self.verbose, self.debug)
         return copy_method
 
-    def set_options(self, copy_overwrite=None, dryrun=None, verbose=None, debug=None):
+    def set_options(self, copy_overwrite=None, copy_dryrun=None, copy_verbose=None, copy_debug=None):
         if copy_overwrite is not None:
             self.copy_overwrite = copy_overwrite
-        if dryrun is not None:
-            self.dryrun = dryrun
-        if verbose is not None:
-            self.verbose = verbose
-        if debug is not None:
-            self.debug = debug
+        if copy_dryrun is not None:
+            self.dryrun = copy_dryrun
+        if copy_verbose is not None:
+            self.verbose = copy_verbose
+        if copy_debug is not None:
+            self.debug = copy_debug
 
     def copy(self, srcfile, dstfile):
         copy_shcmd_full = None

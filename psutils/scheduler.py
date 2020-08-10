@@ -27,16 +27,19 @@ SCHED_NAME_TESTCMD_DICT = {
 if len(SCHED_SUPPORTED) == 0:
     SCHED_SUPPORTED.append(None)
 
+
+## Argument strings ("ARGSTR_")
 ARGSTR_SCHEDULER = '--scheduler'
 ARGSTR_JOBSCRIPT = '--jobscript'
 ARGSTR_JOB_ABBREV = '--job-abbrev'
 ARGSTR_JOB_WALLTIME = '--job-walltime'
 ARGSTR_JOB_MEMORY = '--job-memory'
 ARGSTR_TASKS_PER_JOB = '--tasks-per-job'
-ARGSTR_BUNDLEDIR = '--bundledir'
-ARGSTR_LOGDIR = '--logdir'
+ARGSTR_JOB_BUNDLEDIR = '--job-bundledir'
+ARGSTR_JOB_LOGDIR = '--job-logdir'
 ARGSTR_EMAIL = '--email'
 
+## Argument groups ("ARGGRP_" lists of "ARGSTR_" argument strings)
 ARGGRP_SCHEDULER = [
     ARGSTR_SCHEDULER,
     ARGSTR_JOBSCRIPT,
@@ -44,14 +47,13 @@ ARGGRP_SCHEDULER = [
     ARGSTR_JOB_WALLTIME,
     ARGSTR_JOB_MEMORY,
     ARGSTR_TASKS_PER_JOB,
-    ARGSTR_BUNDLEDIR,
-    ARGSTR_LOGDIR,
+    ARGSTR_JOB_BUNDLEDIR,
+    ARGSTR_JOB_LOGDIR,
     ARGSTR_EMAIL,
 ]
-
 ARGGRP_OUTDIR = [
-    ARGSTR_BUNDLEDIR,
-    ARGSTR_LOGDIR
+    ARGSTR_JOB_BUNDLEDIR,
+    ARGSTR_JOB_LOGDIR
 ]
 
 
@@ -68,27 +70,27 @@ def add_scheduler_arguments(parser,
         help="Name of job scheduler to use for task submission."
     )
     parser.add_argument(
-        ARGSTR_JOB_ABBREV,
+        '-ja', ARGSTR_JOB_ABBREV,
         type=str,
         default=job_abbrev,
         help="Prefix for the jobnames of jobs submitted to scheduler."
     )
     parser.add_argument(
-        ARGSTR_JOB_WALLTIME,
+        '-jw', ARGSTR_JOB_WALLTIME,
         type=psu_at.ARGTYPE_NUM(argstr=ARGSTR_JOB_WALLTIME,
             numeric_type=int, allow_neg=False, allow_zero=False, allow_inf=False),
         default=job_walltime,
         help="Wallclock time alloted for each job submitted to scheduler."
     )
     parser.add_argument(
-        ARGSTR_JOB_MEMORY,
+        '-jm', ARGSTR_JOB_MEMORY,
         type=psu_at.ARGTYPE_NUM(argstr=ARGSTR_JOB_MEMORY,
             numeric_type=int, allow_neg=False, allow_zero=False, allow_inf=False),
         default=job_memory,
         help="Memory alloted for each job submitted to scheduler."
     )
     parser.add_argument(
-        ARGSTR_JOBSCRIPT,
+        '-js', ARGSTR_JOBSCRIPT,
         type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_JOBSCRIPT,
             existcheck_fn=os.path.isfile,
             existcheck_reqval=True,
@@ -101,7 +103,7 @@ def add_scheduler_arguments(parser,
         ])
     )
     parser.add_argument(
-        ARGSTR_TASKS_PER_JOB,
+        '-tpj', ARGSTR_TASKS_PER_JOB,
         type=psu_at.ARGTYPE_NUM(argstr=ARGSTR_JOB_MEMORY,
             numeric_type=int, allow_neg=False, allow_zero=False, allow_inf=False),
         default=None,
@@ -111,8 +113,8 @@ def add_scheduler_arguments(parser,
         ])
     )
     parser.add_argument(
-        ARGSTR_BUNDLEDIR,
-        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_BUNDLEDIR,
+        '-jbd', ARGSTR_JOB_BUNDLEDIR,
+        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_JOB_BUNDLEDIR,
             existcheck_fn=os.path.isfile,
             existcheck_reqval=False,
             accesscheck_reqtrue=os.W_OK,
@@ -124,8 +126,8 @@ def add_scheduler_arguments(parser,
         ])
     )
     parser.add_argument(
-        ARGSTR_LOGDIR,
-        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_LOGDIR,
+        '-jld', ARGSTR_JOB_LOGDIR,
+        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_JOB_LOGDIR,
             existcheck_fn=os.path.isfile,
             existcheck_reqval=False,
             accesscheck_reqtrue=os.W_OK,
