@@ -46,7 +46,7 @@ def setup_logging(logger=None, logger_level=None, handler_level=logging.DEBUG, l
             for file in error_fh_files:
                 warn_handler = logging.StreamHandler(sys.stderr) if file is None else logging.FileHandler(file)
                 warn_handler.setLevel(logging.WARNING)
-                warn_handler.setFormatter(LOGFMT_BASIC if log_format is None else log_format)
+                warn_handler.setFormatter(LOGFMT_DEEP if log_format is None else log_format)
                 warn_logger.addHandler(warn_handler)
         logging.captureWarnings(True)
     elif capture_warnings is False:

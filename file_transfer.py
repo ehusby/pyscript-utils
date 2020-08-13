@@ -106,6 +106,8 @@ ARGSTR_DEXCL = '--dexcl'
 ARGSTR_DEXCL_RE = '--dexcl-re'
 ARGSTR_SRCLIST_DELIM = '--srclist-delim'
 ARGSTR_SRCLIST_NOGLOB = '--srclist-noglob'
+ARGSTR_HARDLINK_RECORD_DIR = '--hardlink-record-dir'
+ARGSTR_NO_HARDLINK_RECORD = '--no-hardlink-record'
 ARGSTR_QUIET = '--quiet'
 ARGSTR_DEBUG = '--debug'
 ARGSTR_DRYRUN = '--dryrun'
@@ -126,7 +128,7 @@ ARGGRP_FILEMATCH = [
     ARGSTR_FMATCH, ARGSTR_FMATCH_RE, ARGSTR_FEXCL, ARGSTR_FEXCL_RE,
     ARGSTR_DMATCH, ARGSTR_DMATCH_RE, ARGSTR_DEXCL, ARGSTR_DEXCL_RE,
 ]
-ARGGRP_OUTDIR = []
+ARGGRP_OUTDIR = [ARGSTR_HARDLINK_RECORD_DIR]
 ARGGRP_OUTDIR += psu_log.ARGGRP_OUTDIR  # comment-out if not using logging arguments
 ARGGRP_OUTDIR += psu_sched.ARGGRP_OUTDIR  # comment-out if not using scheduler arguments
 
@@ -185,8 +187,9 @@ ARGSET_CHOICES = []
 ARGDEF_MINDEPTH = 0
 ARGDEF_MAXDEPTH = psu_at.ARGNUM_POS_INF
 ARGDEF_DMATCH_MAXDEPTH = psu_at.ARGNUM_POS_INF
-ARGDEF_BUNDLEDIR = os.path.join(os.path.expanduser('~'), 'scratch', 'task_bundles')
 ARGDEF_SRCLIST_DELIM = ','
+ARGDEF_HARDLINK_RECORD_DIR = os.path.realpath(os.path.join(os.path.expanduser('~'), 'scratch', '{}_hardlinked'.format(SCRIPT_NAME)))
+ARGDEF_BUNDLEDIR = os.path.realpath(os.path.join(os.path.expanduser('~'), 'scratch', 'task_bundles'))
 ARGDEF_JOB_ABBREV = 'Copy'
 ARGDEF_JOB_WALLTIME_HR = 1
 ARGDEF_JOB_MEMORY_GB = 5
@@ -296,6 +299,8 @@ def argparser_init():
             accesscheck_parent_if_dne=True),
         help=' '.join([
             "Path to output file copy, or directory in which copies of source files will be created.",
+            "To provide a destination directory that overrides all destination paths in source lists,",
+            "use the {} argument instead of this argument.".format(ARGSTR_DSTDIR_GLOBAL)
         ])
     )
 
@@ -324,9 +329,8 @@ def argparser_init():
         nargs='+',
         action='append',
         help=' '.join([
-            "Path to output file copy, or directory in which copies of source files will be created.",
-            "To provide a destination directory that overrides all destination paths in source lists,",
-            "use the {} argument instead of this argument.".format(ARGSTR_DSTDIR_GLOBAL)
+            "Path to textfile list of 'src_path[{}dst_path]' copy tasks to be performed.".format(ARGSTR_SRCLIST_DELIM),
+            ARGHLP_SRCLIST_FORMAT,
         ])
     )
 
@@ -557,6 +561,27 @@ def argparser_init():
         help=' '.join([
             "Do not interpret '*' character as a wildcard for path-globbing in {} and {} textfiles.".format(ARGSTR_SRCLIST, ARGSTR_SRCLIST_ROOTED),
         ])
+    )
+
+    parser.add_argument(
+        '-hrd', ARGSTR_HARDLINK_RECORD_DIR,
+        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_HARDLINK_RECORD_DIR,
+            existcheck_fn=os.path.isfile,
+            existcheck_reqval=False,
+            accesscheck_reqtrue=os.W_OK,
+            accesscheck_parent_if_dne=True),
+        default=ARGDEF_HARDLINK_RECORD_DIR,
+        help=' '.join([
+            "If {}={}, this is the root directory in which a mirror of the current filesystem".format(ARGSTR_COPY_METHOD, ARGCHO_COPY_METHOD_LINK),
+            "will be populated with symlinks to all hardlinked destination files and directories.",
+            "This is to serve as a reminder of the files and directories that have been hardlinked.",
+        ])
+    )
+    parser.add_argument(
+        '-nhr', ARGSTR_NO_HARDLINK_RECORD,
+        action='store_true',
+        # TODO: Write help string
+        help="[write me]"
     )
 
     # Comment-out this block if not using scheduler arguments
@@ -985,6 +1010,18 @@ def perform_tasks(args, task_list):
         copy_dryrun=args.get(ARGSTR_DRYRUN), copy_quiet=args.get(ARGSTR_QUIET), copy_debug=args.get(ARGSTR_DEBUG)
     )
 
+    do_record_hardlinks = (args.get(ARGSTR_COPY_METHOD) == ARGCHO_COPY_METHOD_LINK and not args.get(ARGSTR_NO_HARDLINK_RECORD))
+    if do_record_hardlinks:
+        hardlink_record_dir = args.get(ARGSTR_HARDLINK_RECORD_DIR)
+        copy_method_obj_symlink_record = copy.copy(ARGMAP_COPY_METHOD_FUNC[ARGCHO_COPY_METHOD_SYMLINK])
+        copy_method_obj_symlink_record.set_options(
+            copy_makedirs=True,
+            copy_overwrite=True,
+            copy_dryrun=args.get(ARGSTR_DRYRUN),
+            copy_verbose=args.get(ARGSTR_DEBUG),
+            copy_debug=args.get(ARGSTR_DEBUG)
+        )
+
     for task_srcpath, task_dstpath in task_list:
         if os.path.isfile(task_srcpath):
             task_srcfile = task_srcpath
@@ -995,6 +1032,30 @@ def perform_tasks(args, task_list):
             task_dstdir = task_dstpath
             for x in walk_object.walk(task_srcdir, task_dstdir):
                 pass
+
+        if do_record_hardlinks:
+            task_dstpath_drive, task_dstpath_tail = os.path.splitdrive(os.path.realpath(task_dstpath))
+
+            record_dstpath_for_src = os.path.normpath(
+                "{}/src/{}/{}".format(
+                    hardlink_record_dir,
+                    task_dstpath_drive.rstrip(':'),
+                    task_dstpath_tail
+                )
+            )
+            record_dstpath_for_dst = os.path.normpath(
+                "{}/dst/{}/{}".format(
+                    hardlink_record_dir,
+                    task_dstpath_drive.rstrip(':'),
+                    task_dstpath_tail
+                )
+            )
+
+            if os.path.realpath(record_dstpath_for_src) == record_dstpath_for_src:
+                copy_method_obj_symlink_record.copy(task_srcpath, record_dstpath_for_src)
+
+            if os.path.realpath(record_dstpath_for_dst) == record_dstpath_for_dst:
+                copy_method_obj_symlink_record.copy(task_dstpath, record_dstpath_for_dst)
 
 
 def adjust_dst_path(src_path, dst_path, dst_can_be_file=False, dst_path_type=PATH_TYPE_UNKNOWN,
@@ -1035,8 +1096,13 @@ def adjust_dst_path(src_path, dst_path, dst_can_be_file=False, dst_path_type=PAT
             # src_path is a directory; dst_path will be a new destination directory
             sync_mode = SYNC_MODE_GLOBAL if SYNC_MODE_GLOBAL != ARGMOD_SYNC_MODE_NULL else sync_mode_default
             if sync_mode == ARGMOD_SYNC_MODE_NULL:
-                # Assume user expects the new destination directory to mirror the source directory
-                sync_mode = ARGMOD_SYNC_MODE_SYNC_TREE
+                if (    not psu_str.endswith_one_of_coll(src_path, PATH_SEPARATORS_LIST)
+                    and     psu_str.endswith_one_of_coll(dst_path, PATH_SEPARATORS_LIST)):
+                    # Assume user expects the new destination directory to contain the mirrored source directory
+                    sync_mode = ARGMOD_SYNC_MODE_TRANSPLANT_TREE
+                else:
+                    # Assume user expects the new destination directory to mirror the source directory
+                    sync_mode = ARGMOD_SYNC_MODE_SYNC_TREE
             if sync_mode == ARGMOD_SYNC_MODE_TRANSPLANT_TREE:
                 dst_path = os.path.join(dst_path, os.path.basename(src_path.rstrip(PATH_SEPARATORS_CAT)))
             if not psu_str.endswith_one_of_coll(dst_path, PATH_SEPARATORS_LIST):

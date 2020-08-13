@@ -260,7 +260,7 @@ def handle_task_exception(args, error):
         traceback.print_exc()
     caught_out, caught_err = out
     error_trace = caught_err
-    eprint(error_trace)
+    eprint("Caught the following exception during script task execution\n{}".format(error_trace))
     if error.__class__ is ImportError:
         print(' '.join([
             "\nFailed to import necessary module(s)\n"

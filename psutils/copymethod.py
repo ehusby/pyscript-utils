@@ -87,6 +87,7 @@ class CopyMethod(object):
         self.copy_shprog = copy_shprog
         self.copy_shcmd_is_fmtstr = copy_shcmd_is_fmtstr
 
+        self.copy_makedirs = True
         self.copy_overwrite = False
         self.dryrun = False
         self.verbose = True
@@ -95,10 +96,12 @@ class CopyMethod(object):
     def __copy__(self):
         copy_method = CopyMethod(self.copy_fn, self.copy_fn_name, self.action_verb,
                                  self.reverse_args, self.copy_shcmd_is_fmtstr)
-        copy_method.set_options(self.copy_overwrite, self.dryrun, self.verbose, self.debug)
+        copy_method.set_options(self.copy_makedirs, self.copy_overwrite, self.dryrun, self.verbose, self.debug)
         return copy_method
 
-    def set_options(self, copy_overwrite=None, copy_dryrun=None, copy_verbose=None, copy_debug=None):
+    def set_options(self, copy_makedirs=None, copy_overwrite=None, copy_dryrun=None, copy_verbose=None, copy_debug=None):
+        if copy_makedirs is not None:
+            self.copy_makedirs = copy_makedirs
         if copy_overwrite is not None:
             self.copy_overwrite = copy_overwrite
         if copy_dryrun is not None:
@@ -114,9 +117,9 @@ class CopyMethod(object):
             if self.copy_shcmd_is_fmtstr:
                 copy_shcmd_full = self.copy_shcmd.format(srcfile, dstfile)
             elif self.reverse_args:
-                copy_shcmd_full = "{} {} {}".format(self.copy_shcmd, dstfile, srcfile)
+                copy_shcmd_full = "{} '{}' '{}'".format(self.copy_shcmd, dstfile, srcfile)
             else:
-                copy_shcmd_full = "{} {} {}".format(self.copy_shcmd, srcfile, dstfile)
+                copy_shcmd_full = "{} '{}' '{}'".format(self.copy_shcmd, srcfile, dstfile)
 
         dstfile_exists = os.path.isfile(dstfile)
         if dstfile_exists:
@@ -132,6 +135,8 @@ class CopyMethod(object):
                 else:
                     overwrite_action = "SKIPPING; destination file already exists"
         else:
+            if self.copy_makedirs and not self.dryrun:
+                os.makedirs(os.path.dirname(dstfile), exist_ok=True)
             proceed_with_copy = True
             overwrite_action = ''
 
@@ -147,9 +152,9 @@ class CopyMethod(object):
 
         if self.debug and proceed_with_copy:
             if copy_shcmd_full is not None:
-                print(copy_shcmd_full)
+                debug(copy_shcmd_full)
             else:
-                print("{}({}, {})".format(self.copy_fn_name, srcfile, dstfile))
+                debug("{}('{}', '{}')".format(self.copy_fn_name, srcfile, dstfile))
 
         if not self.dryrun and proceed_with_copy:
             if dstfile_exists and self.copy_overwrite:

@@ -271,6 +271,7 @@ class WalkObject(object):
         else:
             self.copy_method_inst = copy.copy(self.copy_method)
             self.copy_method_inst.set_options(
+                copy_makedirs=False,
                 copy_overwrite=copy_overwrite,
                 copy_dryrun=copy_dryrun,
                 copy_verbose=(copy_quiet if copy_quiet is None else not copy_quiet),
