@@ -7,6 +7,12 @@ import re
 import sys
 import traceback
 
+try:
+    from tqdm import tqdm
+    imported_tqdm = True
+except ImportError:
+    imported_tqdm = False
+
 import psutils.custom_errors as cerr
 from psutils.print_methods import *
 
@@ -36,21 +42,34 @@ FIND_RETURN_ITEMS_DICT = {
 }
 
 
-def walk_simple(srcdir, mindepth=0, maxdepth=float('inf'), list_srcdname=False, list_function=WALK_LIST_FUNCTION_DEFAULT):
+def walk_simple(srcdir, mindepth=0, maxdepth=float('inf'), list_srcdname=False,
+                list_function=WALK_LIST_FUNCTION_DEFAULT, show_progress=False):
+
     if not os.path.isdir(srcdir):
         raise cerr.InvalidArgumentError("`srcdir` directory does not exist: {}".format(srcdir))
     if mindepth < 0 or maxdepth < 0:
         raise cerr.InvalidArgumentError("depth arguments must be >= 0")
+    if show_progress and not imported_tqdm:
+        raise cerr.InvalidArgumentError("Python package 'tqdm' must be available to use `show_progress` option")
+
     srcdir = os.path.abspath(srcdir)
+    if show_progress:
+        my_tftc = TrackFileTreeCount()
+        my_tqdm = tqdm(total=1, unit="file", disable=False)
+    else:
+        my_tftc = None
+        my_tqdm = None
+
     if list_srcdname and mindepth == 0:
         updir = os.path.dirname(srcdir)
         srcdname = os.path.basename(srcdir)
         yield updir, [srcdname], []
-    for x in _walk_simple(srcdir, 1, mindepth, maxdepth, list_function):
+
+    for x in _walk_simple(srcdir, 1, mindepth, maxdepth, list_function, my_tftc, my_tqdm):
         yield x
 
 
-def _walk_simple(rootdir, depth, mindepth, maxdepth, list_function):
+def _walk_simple(rootdir, depth, mindepth, maxdepth, list_function, my_tftc=None, my_tqdm=None):
     if depth > maxdepth:
         return
     dnames, fnames = [], []
@@ -62,12 +81,114 @@ def _walk_simple(rootdir, depth, mindepth, maxdepth, list_function):
             pname = dirent.name
             dirent_is_dir = dirent.is_dir()
         (dnames if dirent_is_dir else fnames).append(pname)
-    if mindepth <= depth <= maxdepth:
+    if mindepth <= depth:
         yield rootdir, dnames, fnames
+
+    if my_tftc and my_tqdm:
+        my_tftc.add(depth, len(dnames), len(fnames) if mindepth <= depth else 0)
+        if len(dnames) == 0:
+            for i in range(depth+1, my_tftc.max_depth_found+1):
+                my_tftc.update_estimates(i)
+        file_count, file_est = my_tftc.get_file_count_estimate()
+        my_tqdm.total = int(file_est)
+        my_tqdm.update(len(fnames))
+
+    # print("rootdir {}, depth {}: {} folders, {} files".format(
+    #     rootdir, depth, len(dnames), len(fnames)
+    # ))
+    # folder_count, folder_est = my_tftc.get_folder_count_estimate()
+    # file_count, file_est = my_tftc.get_file_count_estimate()
+    # print("folders count, estimate: {}, {}  ::  {:.2%}".format(folder_count, folder_est, folder_count/folder_est))
+    # print("files count, estimate: {}, {}  ::  {:.2%}".format(file_count, file_est, file_count/file_est))
+
     if depth < maxdepth:
         for dname in dnames:
-            for x in _walk(os.path.join(rootdir, dname), depth+1, mindepth, maxdepth, list_function):
+            for x in _walk_simple(os.path.join(rootdir, dname), depth+1, mindepth, maxdepth, list_function, my_tftc, my_tqdm):
                 yield x
+
+
+class TrackFileTreeCount(object):
+
+    def __init__(self):
+        self.max_depth_found = 0
+
+        self.nentries_at_depth = [1]
+        self.nfolders_at_depth = [1]
+        self.nfiles_at_depth = [0]
+
+        # self.nfolders_per_entry_at_depth = [[1]]
+        # self.nfiles_per_entry_at_depth = [[0]]
+        self.nfolders_estimate_at_depth = [1]
+        self.nfiles_estimate_at_depth = [0]
+
+        self.total_folder_count = 0
+        self.total_file_count = 0
+        self.total_folder_estimate = 0
+        self.total_file_estimate = 0
+
+    def add(self, depth, nfolders, nfiles):
+
+        added_depth = depth - self.max_depth_found
+        if added_depth > 0:
+            self.max_depth_found = depth
+
+            self.nentries_at_depth.extend([0]*added_depth)
+            self.nfolders_at_depth.extend([0]*added_depth)
+            self.nfiles_at_depth.extend([0]*added_depth)
+
+            # self.nfolders_per_entry_at_depth.extend([[]]*added_depth)
+            # self.nfiles_per_entry_at_depth.extend([[]]*added_depth)
+            self.nfolders_estimate_at_depth.extend([0]*added_depth)
+            self.nfiles_estimate_at_depth.extend([0]*added_depth)
+
+        self.nentries_at_depth[depth] += 1
+        self.nfolders_at_depth[depth] += nfolders
+        self.nfiles_at_depth[depth] += nfiles
+
+        # self.nfolders_per_entry_at_depth[depth].append(nfolders)
+        # self.nfiles_per_entry_at_depth[depth].append(nfiles)
+
+        self.total_folder_count += nfolders
+        self.total_file_count += nfiles
+
+        self.update_estimates(depth)
+
+    def update_estimates(self, depth):
+        # self.total_folder_estimate += self._update_estimate(depth, self.nfolders_at_depth, self.nfolders_per_entry_at_depth, self.nfolders_estimate_at_depth)
+        # self.total_file_estimate += self._update_estimate(depth, self.nfiles_at_depth, self.nfiles_per_entry_at_depth, self.nfiles_estimate_at_depth)
+        self.total_folder_estimate += self._update_estimate(depth, self.nfolders_at_depth, self.nfolders_estimate_at_depth)
+        self.total_file_estimate += self._update_estimate(depth, self.nfiles_at_depth, self.nfiles_estimate_at_depth)
+
+    # def _update_estimate(self, depth, nitems_at_depth, nitems_per_entry_at_depth, nitems_estimate_at_depth):
+    def _update_estimate(self, depth, nitems_at_depth, nitems_estimate_at_depth):
+
+        # total_entries_at_depth_thus_far = len(nitems_per_entry_at_depth[depth])
+        total_entries_at_depth_thus_far = self.nentries_at_depth[depth]
+        # total_items_at_depth_thus_far = sum(nitems_per_entry_at_depth[depth])
+        total_items_at_depth_thus_far = nitems_at_depth[depth]
+
+        estimated_total_entries_at_depth = self.nfolders_estimate_at_depth[depth-1]
+
+        if estimated_total_entries_at_depth > total_entries_at_depth_thus_far:
+            # average_item_count_per_entry = mean(nitems_per_entry_at_depth[depth])
+            average_item_count_per_entry = total_items_at_depth_thus_far / total_entries_at_depth_thus_far
+            estimated_additional_entries = estimated_total_entries_at_depth - total_entries_at_depth_thus_far
+            estimated_additional_items = estimated_additional_entries * average_item_count_per_entry
+        else:
+            estimated_additional_items = 0
+
+        old_estimate = nitems_estimate_at_depth[depth]
+        new_estimate = total_items_at_depth_thus_far + estimated_additional_items
+
+        nitems_estimate_at_depth[depth] = new_estimate
+
+        return new_estimate - old_estimate
+
+    def get_folder_count_estimate(self):
+        return self.total_folder_count, self.total_folder_estimate
+
+    def get_file_count_estimate(self):
+        return self.total_file_count, self.total_file_estimate
 
 
 class WalkObject(object):
@@ -76,9 +197,10 @@ class WalkObject(object):
         fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
         dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
         fsub=None, dsub=None,
-        copy_method=None, copy_overwrite=False, transplant_tree=False, collapse_tree=False,
+        copy_method=None, copy_overwrite_files=False, copy_overwrite_dirs=False, copy_overwrite_dmatch=False, transplant_tree=False, collapse_tree=False,
         copy_dryrun=False, copy_quiet=False, copy_debug=False,
         symlink_dirs=False,
+        move_dirs=True,
         mkdir_upon_file_copy=False,
         allow_nonstd_shprogs=False,
         copy_shcmd_fmtstr=None,
@@ -210,19 +332,28 @@ class WalkObject(object):
             else:
                 copy_method = psu_cm.CopyMethod(copy_method)
             copy_method.set_options(
-                copy_overwrite=copy_overwrite,
+                check_srcpath_exists=False,
+                copy_makedirs=False,
+                copy_overwrite_files=copy_overwrite_files,
+                copy_overwrite_dirs=copy_overwrite_dirs,
                 copy_dryrun=copy_dryrun,
                 copy_verbose=(not copy_quiet),
                 copy_debug=copy_debug
             )
 
-        if symlink_dirs and copy_shcmd_fmtstr is None:
-            if copy_method is not None and (
-                   (copy_method in (psu_cm.COPY_METHOD_SYMLINK, psu_cm.COPY_METHOD_SYMLINK_SYSTEM))
-                or (copy_method.action_verb in ('symlinking', 'linking'))):
+        if symlink_dirs:
+            if copy_method is not None and copy_method.action_verb.upper() == 'SYMLINKING':
                 pass
             else:
-                raise cerr.InvalidArgumentError("`symlink_dirs` can only be True when a symlink copy method is provided")
+                # raise cerr.InvalidArgumentError("`symlink_dirs` can only be True when a linking-type copy method is provided")
+                symlink_dirs = False
+
+        if move_dirs:
+            if copy_method is not None and copy_method.action_verb.upper() == 'MOVING':
+                pass
+            else:
+                # raise cerr.InvalidArgumentError("`move_dirs` can only be True when a move-type copy method is provided")
+                move_dirs = False
 
         self.srcdir = None
         self.dstdir = None
@@ -241,14 +372,18 @@ class WalkObject(object):
         self.collapse_tree = collapse_tree
         self.collapse_tree_inst = collapse_tree
         self.symlink_dirs = symlink_dirs
+        self.move_dirs = move_dirs
         self.mkdir_upon_file_copy = mkdir_upon_file_copy
         self.list_function = list_function
         self.rematch_function = rematch_function
         self.resub_function = resub_function
+        self.tftc = None
+        self.tqdm = None
+        self.copy_overwrite_dmatch = copy_overwrite_dmatch
 
     def walk(self,
              srcdir, dstdir=None,
-             copy_overwrite=None, transplant_tree=None, collapse_tree=None,
+             copy_overwrite_files=None, copy_overwrite_dirs=None, transplant_tree=None, collapse_tree=None,
              copy_dryrun=None, copy_quiet=None, copy_debug=None):
         if transplant_tree is None:
             transplant_tree = self.transplant_tree
@@ -271,29 +406,20 @@ class WalkObject(object):
         else:
             self.copy_method_inst = copy.copy(self.copy_method)
             self.copy_method_inst.set_options(
+                check_srcpath_exists=False,
                 copy_makedirs=False,
-                copy_overwrite=copy_overwrite,
+                copy_overwrite_files=copy_overwrite_files,
+                copy_overwrite_dirs=copy_overwrite_dirs,
                 copy_dryrun=copy_dryrun,
                 copy_verbose=(copy_quiet if copy_quiet is None else not copy_quiet),
                 copy_debug=copy_debug
             )
 
-        if self.copy_method_inst is not None and self.dstdir is not None and not os.path.isdir(self.dstdir):
-            if not self.copy_method_inst.dryrun:
-                os.makedirs(self.dstdir)
+        depth = 0
+        dmatch_depth = -1 if not (self.dname_rematch or self.dname_reexcl) else 0
 
-        depth = 1
-        dmatch_depth = -1 if not self.dname_rematch else 0
-
-        for x in self._walk(self.srcdir, self.dstdir, depth, dmatch_depth):
-            yield x
-
-    def _walk(self, srcdir, dstdir, depth, dmatch_depth=-1):
-        if depth > self.maxdepth and not (1 <= dmatch_depth <= self.dmatch_maxdepth):
-            return
-
-        if depth == 1 and dmatch_depth == 0:
-            srcdname = os.path.basename(srcdir)
+        if dmatch_depth == 0:
+            srcdname = os.path.basename(self.srcdir)
             srcdname_match = True
             if self.dname_reexcl:
                 for re_pattern in self.dname_reexcl:
@@ -310,6 +436,51 @@ class WalkObject(object):
                         break
             if srcdname_match:
                 dmatch_depth = 1
+
+        if (self.symlink_dirs or self.move_dirs) and dmatch_depth != 0 and (self.mindepth <= depth <= self.maxdepth):
+            copy_success = self.copy_method_inst.copy(
+                self.srcdir, self.dstdir,
+                overwrite_dir=(self.copy_method_inst.copy_overwrite_dirs or (self.copy_overwrite_dmatch and dmatch_depth == 1))
+            )
+            return
+
+        if imported_tqdm:
+            self.tftc = TrackFileTreeCount()
+            self.tqdm = tqdm(total=1, unit="file", disable=False)
+
+        if self.copy_method_inst is not None and self.dstdir is not None and not os.path.isdir(self.dstdir):
+            if not self.copy_method_inst.dryrun:
+                os.makedirs(self.dstdir)
+
+        depth = 1
+        for x in self._walk(self.srcdir, self.dstdir, depth, dmatch_depth):
+            yield x
+
+        if imported_tqdm:
+            self.tqdm.close()
+
+    def _walk(self, srcdir, dstdir, depth, dmatch_depth=-1):
+        if depth > self.maxdepth and not (1 <= dmatch_depth <= self.dmatch_maxdepth):
+            return
+
+        # if depth == 1 and dmatch_depth == 0:
+        #     srcdname = os.path.basename(srcdir)
+        #     srcdname_match = True
+        #     if self.dname_reexcl:
+        #         for re_pattern in self.dname_reexcl:
+        #             srcdname_match = (not self.rematch_function(re_pattern, srcdname))
+        #             if not srcdname_match:
+        #                 break
+        #         if not srcdname_match:
+        #             return
+        #     if self.dname_rematch and srcdname_match:
+        #         srcdname_match = False
+        #         for re_pattern in self.dname_rematch:
+        #             srcdname_match = self.rematch_function(re_pattern, srcdname)
+        #             if srcdname_match:
+        #                 break
+        #     if srcdname_match:
+        #         dmatch_depth = 1
 
         srcdir_passes = (dmatch_depth <= self.dmatch_maxdepth and dmatch_depth != 0)
 
@@ -388,12 +559,21 @@ class WalkObject(object):
                         for re_pattern, repl_str in self.fname_resub:
                             fname = self.resub_function(re_pattern, repl_str, fname)
                     dstfile = os.path.join(dstdir, fname)
-                    self.copy_method_inst.copy(srcfile, dstfile)
+                    copy_success = self.copy_method_inst.copy(srcfile, dstfile)
 
             dnames_yield = (     dnames_filtered if (dnames_filtered_pass is None or srcdir_passes)
                             else [dn for i, dn in enumerate(dnames_filtered) if dnames_filtered_pass[i]])
 
             yield srcdir, dnames_yield, fnames_filtered
+
+        if imported_tqdm:
+            self.tftc.add(depth, len(dnames_filtered), len(fnames_filtered) if depth >= self.mindepth else 0)
+            if len(dnames_filtered) == 0:
+                for i in range(depth+1, self.tftc.max_depth_found+1):
+                    self.tftc.update_estimates(i)
+            file_count, file_est = self.tftc.get_file_count_estimate()
+            self.tqdm.total = int(file_est)
+            self.tqdm.update(len(fnames_filtered))
 
         if dnames_filtered and (depth < self.maxdepth or dmatch_depth != -1):
             depth_next = depth + 1
@@ -408,14 +588,16 @@ class WalkObject(object):
                 dmatch_depth_next_fail = dmatch_depth_next_pass
 
             for i, dn in enumerate(dnames_filtered):
-                if depth == self.maxdepth and not (dmatch_depth > 0 or dnames_filtered_pass[i]):
+                srcdir_next_passes = (dnames_filtered_pass is None or dnames_filtered_pass[i])
+
+                if depth == self.maxdepth and not (dmatch_depth > 0 or srcdir_next_passes):
                     continue
 
                 srcdir_next = os.path.join(srcdir, dn)
                 if dmatch_depth == -1:
                     dmatch_depth_next = -1
                 else:
-                    dmatch_depth_next = dmatch_depth_next_pass if (dnames_filtered_pass is None or dnames_filtered_pass[i]) else dmatch_depth_next_fail
+                    dmatch_depth_next = dmatch_depth_next_pass if srcdir_next_passes else dmatch_depth_next_fail
 
                 if dstdir is None:
                     dstdir_next = None
@@ -428,8 +610,11 @@ class WalkObject(object):
                             dstdname_next = self.resub_function(re_pattern, repl_str, dstdname_next)
                     dstdir_next = os.path.join(dstdir, dstdname_next)
 
-                if self.symlink_dirs and dnames_filtered_pass[i] and depth >= self.mindepth:
-                    self.copy_method_inst.copy(srcdir_next, dstdir_next)
+                if (self.symlink_dirs or self.move_dirs) and srcdir_next_passes and depth >= self.mindepth:
+                    copy_success = self.copy_method_inst.copy(
+                        srcdir_next, dstdir_next,
+                        overwrite_dir=(self.copy_method.copy_overwrite_dirs or self.copy_overwrite_dmatch)
+                    )
                 else:
                     for x in self._walk(srcdir_next, dstdir_next, depth_next, dmatch_depth_next):
                         yield x
@@ -441,9 +626,10 @@ def _walk(
     fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
     dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
     fsub=None, dsub=None,
-    copy_method=None, copy_overwrite=False, transplant_tree=False, collapse_tree=False,
+    copy_method=None, copy_overwrite_files=False, copy_overwrite_dirs=False, copy_overwrite_dmatch=False, transplant_tree=False, collapse_tree=False,
     copy_dryrun=False, copy_quiet=False, copy_debug=False,
     symlink_dirs=False,
+    move_dirs=False,
     mkdir_upon_file_copy=False,
     allow_nonstd_shprogs=False,
     copy_shcmd_fmtstr=None,
@@ -463,9 +649,10 @@ def _walk(
         fmatch, fmatch_re, fexcl, fexcl_re,
         dmatch, dmatch_re, dexcl, dexcl_re,
         fsub, dsub,
-        copy_method, copy_overwrite, transplant_tree, collapse_tree,
+        copy_method, copy_overwrite_files, copy_overwrite_dirs, copy_overwrite_dmatch, transplant_tree, collapse_tree,
         copy_dryrun, copy_quiet, copy_debug,
         symlink_dirs,
+        move_dirs,
         mkdir_upon_file_copy,
         allow_nonstd_shprogs,
         copy_shcmd_fmtstr,
@@ -478,7 +665,7 @@ def _walk(
         updir = os.path.dirname(srcdir)
         srcdname = os.path.basename(srcdir)
         yield updir, [srcdname], []
-    for x in walk_object.walk(srcdir, dstdir, copy_overwrite, transplant_tree, collapse_tree):
+    for x in walk_object.walk(srcdir, dstdir, copy_overwrite_files, copy_overwrite_dirs, transplant_tree, collapse_tree):
         yield x
 
 
@@ -509,9 +696,10 @@ def find(
     fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
     dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
     fsub=None, dsub=None,
-    copy_method=None, copy_overwrite=False, transplant_tree=False, collapse_tree=False,
+    copy_method=None, copy_overwrite_files=False, copy_overwrite_dirs=False, transplant_tree=False, collapse_tree=False,
     copy_dryrun=False, copy_quiet=False, copy_debug=False,
     symlink_dirs=False,
+    move_dirs=False,
     mkdir_upon_file_copy=False,
     allow_nonstd_shprogs=False,
     copy_shcmd_fmtstr=None,
@@ -566,9 +754,10 @@ def find(
             fmatch, fmatch_re, fexcl, fexcl_re,
             dmatch, dmatch_re, dexcl, dexcl_re,
             fsub, dsub,
-            copy_method, copy_overwrite, transplant_tree, collapse_tree,
+            copy_method, copy_overwrite_files, copy_overwrite_dirs, transplant_tree, collapse_tree,
             copy_dryrun, copy_quiet, copy_debug,
             symlink_dirs,
+            move_dirs,
             mkdir_upon_file_copy,
             allow_nonstd_shprogs,
             copy_shcmd_fmtstr,
@@ -644,6 +833,7 @@ def copy_tree(
     vreturn=None, vyield=None, print_findings=False, list_srcdname=False,
     dryrun=False, quiet=False, debug=False,
     symlink_dirs=False,
+    move_dirs=False,
     mkdir_upon_file_copy=False,
     allow_nonstd_shprogs=False,
     copy_shcmd_fmtstr=None,
@@ -666,6 +856,7 @@ def copy_tree(
         copy_method, overwrite, transplant_tree, collapse_tree,
         dryrun, quiet, debug,
         symlink_dirs,
+        move_dirs,
         mkdir_upon_file_copy,
         allow_nonstd_shprogs,
         copy_shcmd_fmtstr,

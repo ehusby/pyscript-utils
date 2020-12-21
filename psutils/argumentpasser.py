@@ -65,12 +65,14 @@ class ArgumentPasser(object):
         varstr2action = {}
         varstr2argstr = {}
         argstr2action = {}
+        argstr2argtype = {}
         argstr2varstr = {}
         argbrv2argstr = {}
         pos_actions = [act for act in self.parser._actions if len(act.option_strings) == 0]
         opt_actions = [act for act in self.parser._actions if len(act.option_strings)  > 0]
         for act in opt_actions + pos_actions:
             varstr = act.dest
+            argtype = act.type
             argstr_list = act.option_strings if len(act.option_strings) > 0 else [varstr.replace('_', '-')]
             argstr_main = max(argstr_list, key=len)
             varstr2action[varstr] = act
@@ -78,6 +80,7 @@ class ArgumentPasser(object):
             for argstr in argstr_list:
                 argstr2action[argstr] = act
                 argstr2varstr[argstr] = varstr
+                argstr2argtype[argstr] = argtype
                 argbrv2argstr[argstr] = argstr_main
                 all_argstr.append(argstr)
                 if len(act.option_strings) == 0:
@@ -91,6 +94,7 @@ class ArgumentPasser(object):
         self.varstr2argstr = varstr2argstr
         self.argstr2action = argstr2action
         self.argstr2varstr = argstr2varstr
+        self.argstr2argtype = argstr2argtype
         self.argbrv2argstr = argbrv2argstr
 
     def _get_provided_opt_args(self):
@@ -148,7 +152,7 @@ class ArgumentPasser(object):
             for argstr_i, newval_i in list(zip(argstrs, newval)):
                 if argstr_i not in self.argstr2varstr:
                     raise cerr.InvalidArgumentError("This {} object has no '{}' argument string".format(type(self).__name__, argstr_i))
-                self.vars_dict[self.argstr2varstr[argstr_i]] = newval_i
+                self.vars_dict[self.argstr2varstr[argstr_i]] = self.argstr2argtype[argstr_i](newval_i)
         else:
             argstr_list = argstrs if type(argstrs) in (tuple, list) else [argstrs]
             for argstr in argstr_list:

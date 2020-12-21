@@ -11,13 +11,9 @@ import traceback
 
 import psutils.custom_errors as cerr
 import psutils.scheduler as psu_sched
-import psutils.logger as psu_log
 from psutils.print_methods import *
 
 from psutils import PYTHON_VERSION_REQUIRED_MIN
-from psutils.argumentpasser import ArgumentPasser
-from psutils.tasklist import write_task_bundles
-from psutils.string import get_index_fmtstr
 from psutils.stream import capture_stdout_stderr
 from psutils.func import with_noop
 
@@ -59,6 +55,8 @@ ________________________________________________________
 
 
 def setup_outfile_logging(args):
+    import psutils.logger as psu_log
+
     logging_level = psu_log.ARGMAP_LOG_LEVEL_LOGGING_FUNC[args.get(psu_log.ARGSTR_LOG_LEVEL)]
     log_outfile, log_errfile = args.get(psu_log.ARGSTR_LOG_OUTFILE, psu_log.ARGSTR_LOG_ERRFILE)
 
@@ -153,6 +151,7 @@ def check_mutually_exclusive_args(args, argcol_mut_excl_set, argcol_mut_excl_pro
 
 def parse_args(python_exe, script_file, arg_parser, sys_argv,
                doubled_args=dict(), doubled_args_restricted_optgrp=None):
+    from psutils.argumentpasser import ArgumentPasser
 
     args = ArgumentPasser(python_exe, script_file, arg_parser, sys_argv, remove_args=[], parse=False)
 
@@ -215,6 +214,9 @@ def submit_tasks_to_scheduler(parent_args, parent_tasks,
                               task_items_descr=None, task_delim=',',
                               python_version_accepted_min=PYTHON_VERSION_REQUIRED_MIN,
                               dryrun=False):
+    from psutils.tasklist import write_task_bundles
+    from psutils.string import get_index_fmtstr
+
     if child_args is None:
         child_args = copy.deepcopy(parent_args)
     child_args.unset(psu_sched.ARGGRP_SCHEDULER)

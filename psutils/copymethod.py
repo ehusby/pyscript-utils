@@ -2,6 +2,7 @@
 import filecmp
 import os
 import shutil
+import stat
 import types
 
 import psutils.globals as psu_globals
@@ -87,8 +88,10 @@ class CopyMethod(object):
         self.copy_shprog = copy_shprog
         self.copy_shcmd_is_fmtstr = copy_shcmd_is_fmtstr
 
+        self.check_srcpath_exists = True
         self.copy_makedirs = True
-        self.copy_overwrite = False
+        self.copy_overwrite_files = False
+        self.copy_overwrite_dirs = False
         self.dryrun = False
         self.verbose = True
         self.debug = False
@@ -96,14 +99,18 @@ class CopyMethod(object):
     def __copy__(self):
         copy_method = CopyMethod(self.copy_fn, self.copy_fn_name, self.action_verb,
                                  self.reverse_args, self.copy_shcmd_is_fmtstr)
-        copy_method.set_options(self.copy_makedirs, self.copy_overwrite, self.dryrun, self.verbose, self.debug)
+        copy_method.set_options(self.check_srcpath_exists, self.copy_makedirs, self.copy_overwrite_files, self.copy_overwrite_dirs, self.dryrun, self.verbose, self.debug)
         return copy_method
 
-    def set_options(self, copy_makedirs=None, copy_overwrite=None, copy_dryrun=None, copy_verbose=None, copy_debug=None):
+    def set_options(self, check_srcpath_exists=None, copy_makedirs=None, copy_overwrite_files=None, copy_overwrite_dirs=None, copy_dryrun=None, copy_verbose=None, copy_debug=None):
+        if check_srcpath_exists:
+            self.check_srcpath_exists = check_srcpath_exists
         if copy_makedirs is not None:
             self.copy_makedirs = copy_makedirs
-        if copy_overwrite is not None:
-            self.copy_overwrite = copy_overwrite
+        if copy_overwrite_files is not None:
+            self.copy_overwrite_files = copy_overwrite_files
+        if copy_overwrite_dirs is not None:
+            self.copy_overwrite_dirs = copy_overwrite_dirs
         if copy_dryrun is not None:
             self.dryrun = copy_dryrun
         if copy_verbose is not None:
@@ -111,60 +118,101 @@ class CopyMethod(object):
         if copy_debug is not None:
             self.debug = copy_debug
 
-    def copy(self, srcfile, dstfile):
-        copy_shcmd_full = None
-        if self.copy_shcmd is not None:
-            if self.copy_shcmd_is_fmtstr:
-                copy_shcmd_full = self.copy_shcmd.format(srcfile, dstfile)
-            elif self.reverse_args:
-                copy_shcmd_full = "{} '{}' '{}'".format(self.copy_shcmd, dstfile, srcfile)
-            else:
-                copy_shcmd_full = "{} '{}' '{}'".format(self.copy_shcmd, srcfile, dstfile)
+    def copy(self, srcpath, dstpath,
+             overwrite_file=None, overwrite_dir=None):
 
-        dstfile_exists = os.path.isfile(dstfile)
-        if dstfile_exists:
-            if self.copy_overwrite:
-                proceed_with_copy = True
-                overwrite_action = "OVERWRITING"
-            else:
-                proceed_with_copy = False
-                # dstfile_is_srcfile = filecmp.cmp(srcfile, dstfile) if self.action_verb in ['HARDLINKING', 'LINKING'] else False
-                dstfile_is_srcfile = os.stat(srcfile).st_ino == os.stat(dstfile).st_ino if self.action_verb in ['HARDLINKING', 'LINKING'] else False
-                if dstfile_is_srcfile:
-                    overwrite_action = "SKIPPING; correct link already exists"
-                else:
-                    overwrite_action = "SKIPPING; destination file already exists"
+        if overwrite_file is None:
+            overwrite_file = self.copy_overwrite_files
+        if overwrite_dir is None:
+            overwrite_dir = self.copy_overwrite_dirs
+
+        copy_info = None
+        proceed_with_copy = False
+
+        srcpath_stat = None
+        dstpath_stat = None
+
+        if self.check_srcpath_exists and os.path.exists(srcpath):
+            srcpath_stat = os.stat(srcpath)
+
+        if self.check_srcpath_exists and srcpath_stat is None:
+            copy_info = "SKIPPING; source path does not exist"
+            proceed_with_copy = False
         else:
-            if self.copy_makedirs and not self.dryrun:
-                os.makedirs(os.path.dirname(dstfile), exist_ok=True)
-            proceed_with_copy = True
-            overwrite_action = ''
+            if not os.path.exists(dstpath):
+                proceed_with_copy = True
+            else:
+                dstpath_stat = os.stat(dstpath)
+                if stat.S_ISDIR(dstpath_stat.st_mode):
+                    # dstpath is a directory
+                    if overwrite_dir:
+                        copy_info = "OVERWRITING DIRECTORY"
+                        proceed_with_copy = True
+                    else:
+                        copy_info = "SKIPPING; destination directory already exists"
+                        proceed_with_copy = False
+                else:
+                    # dstpath is a file
+                    if overwrite_file:
+                        copy_info = "OVERWRITING FILE"
+                        proceed_with_copy = True
+                    elif self.action_verb in ['HARDLINKING', 'LINKING']:
+                        if srcpath_stat is None:
+                            srcpath_stat = os.stat(srcpath)
+                        if srcpath_stat.st_ino == dstpath_stat.st_ino:
+                            copy_info = "SKIPPING; correct file hardlink already exists"
+                            proceed_with_copy = False
+                        else:
+                            copy_info = "SKIPPING; destination file already exists"
+                            proceed_with_copy = False
+                    else:
+                        copy_info = "SKIPPING; destination file already exists"
+                        proceed_with_copy = False
 
         if self.verbose:
             print("{}{}: {} -> {}{}".format(
                 "(dryrun) " if self.dryrun else '', self.action_verb,
-                srcfile, dstfile,
-                " ({})".format(overwrite_action) if dstfile_exists else ''
+                srcpath, dstpath,
+                " ({})".format(copy_info) if copy_info is not None else ''
             ))
 
         if not proceed_with_copy:
-            return
+            return proceed_with_copy
+
+        copy_shcmd_full = None
+        if self.copy_shcmd is not None and proceed_with_copy:
+            if self.copy_shcmd_is_fmtstr:
+                copy_shcmd_full = self.copy_shcmd.format(srcpath, dstpath)
+            elif self.reverse_args:
+                copy_shcmd_full = "{} '{}' '{}'".format(self.copy_shcmd, dstpath, srcpath)
+            else:
+                copy_shcmd_full = "{} '{}' '{}'".format(self.copy_shcmd, srcpath, dstpath)
 
         if self.debug and proceed_with_copy:
             if copy_shcmd_full is not None:
                 debug(copy_shcmd_full)
             else:
-                debug("{}('{}', '{}')".format(self.copy_fn_name, srcfile, dstfile))
+                debug("{}('{}', '{}')".format(self.copy_fn_name, srcpath, dstpath))
 
         if not self.dryrun and proceed_with_copy:
-            if dstfile_exists and self.copy_overwrite:
-                os.remove(dstfile)
+
+            if dstpath_stat is not None:
+                if stat.S_ISDIR(dstpath_stat.st_mode) and overwrite_dir:
+                    shutil.rmtree(dstpath)
+                elif overwrite_file:
+                    os.remove(dstpath)
+
+            elif self.copy_makedirs:
+                os.makedirs(os.path.dirname(dstpath), exist_ok=True)
+
             if copy_shcmd_full is not None:
                 execute_shell_command(copy_shcmd_full)
             elif self.reverse_args:
-                self.copy_fn(dstfile, srcfile)
+                self.copy_fn(dstpath, srcpath)
             else:
-                self.copy_fn(srcfile, dstfile)
+                self.copy_fn(srcpath, dstpath)
+
+        return proceed_with_copy
 
 
 if psu_globals.SYSTYPE == psu_globals.SYSTYPE_WINDOWS:
