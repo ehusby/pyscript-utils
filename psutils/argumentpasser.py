@@ -245,7 +245,7 @@ class ArgumentPasser(object):
                     posarg_list.append(' '.join([self._argval2str(item) for item in val]))
                 else:
                     posarg_list.append(self._argval2str(val))
-        self.cmd = '{} "{}" {} {}'.format(self.exe, self.script_file, " ".join(posarg_list), self.cmd_optarg_base)
+        self.cmd = """ {} "{}" {} {} """.format(self.exe, self.script_file, " ".join(posarg_list), self.cmd_optarg_base)
 
     def get_cmd(self):
         return self.cmd

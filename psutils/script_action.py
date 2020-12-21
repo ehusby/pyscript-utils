@@ -10,6 +10,7 @@ import subprocess
 import traceback
 
 import psutils.custom_errors as cerr
+import psutils.globals as psu_globals
 import psutils.scheduler as psu_sched
 from psutils.print_methods import *
 
@@ -270,19 +271,27 @@ def handle_task_exception(args, error):
             "set up, try running the following command to activate a working environment",
             "in your current shell session:\n{}\n".format("source {} {}".format(psu_sched.JOBSCRIPT_INIT, args.get(psu_sched.ARGSTR_JOB_ABBREV))),
         ]))
+    return error_trace
 
 
 def send_email(to_addr, subject, body, from_addr=None):
-    if from_addr is None:
-        platform_node = platform.node()
-        from_addr = platform_node if platform_node is not None else 'your-computer'
-    msg = MIMEText(body)
-    msg['Subject'] = subject
-    msg['From'] = from_addr
-    msg['To'] = to_addr
-    s = smtplib.SMTP('localhost')
-    s.sendmail(to_addr, [to_addr], msg.as_string())
-    s.quit()
+    from psutils.shell import execute_shell_command
+
+    if psu_globals.SYSTYPE == psu_globals.SYSTYPE_WINDOWS:
+        if from_addr is None:
+            platform_node = platform.node()
+            from_addr = platform_node if platform_node is not None else 'your-computer'
+        msg = MIMEText(body)
+        msg['Subject'] = subject
+        msg['From'] = from_addr
+        msg['To'] = to_addr
+        s = smtplib.SMTP('localhost')
+        s.sendmail(to_addr, [to_addr], msg.as_string())
+        s.quit()
+
+    else:
+        mail_cmd = """ echo "{}" | mail -s "{}" {} """.format(body, subject, to_addr)
+        execute_shell_command(mail_cmd)
 
 
 def send_script_completion_email(args, error_trace):
