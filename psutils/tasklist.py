@@ -47,6 +47,10 @@ ARGMOD_SYNC_MODE_NULL = 0
 ARGMOD_SYNC_MODE_SYNC_TREE = 1
 ARGMOD_SYNC_MODE_TRANSPLANT_TREE = 2
 
+## Argument defaults ("ARGDEF_")
+ARGDEF_SRCLIST_DELIM = ','
+ARGDEF_BUNDLEDIR = os.path.realpath(os.path.join(os.path.expanduser('~'), 'scratch', 'task_bundles'))
+
 ##############################
 
 ### Custom globals ###
@@ -64,7 +68,7 @@ PATH_TYPE_DNE = 3
 ##############################
 
 
-def pre_argparse(srclist_delim,
+def pre_argparse(srclist_delim=ARGDEF_SRCLIST_DELIM,
                  argstr_dst=None):
     global ARGHLP_SRCLIST_FORMAT, ARGHLP_SRCLIST_ROOTED_FORMAT
 
@@ -90,7 +94,7 @@ def pre_argparse(srclist_delim,
 
 
 def add_srclist_arguments(parser,
-                          srclist_delim):
+                          srclist_delim=ARGDEF_SRCLIST_DELIM):
     parser.add_argument(
         '-dg', ARGSTR_DSTDIR_GLOBAL,
         type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_DSTDIR_GLOBAL,

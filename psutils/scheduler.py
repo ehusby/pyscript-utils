@@ -6,27 +6,9 @@ import psutils.argtype as psu_at
 from psutils import MODULE_DIR
 
 
-JOBSCRIPT_DIR = os.path.join(MODULE_DIR, 'jobscripts')
-JOBSCRIPT_INIT = os.path.join(JOBSCRIPT_DIR, 'init.sh')
+##############################
 
-SCHED_SUPPORTED = []
-SCHED_PBS = 'pbs'
-SCHED_SLURM = 'slurm'
-SCHED_NAME_TESTCMD_DICT = {
-    SCHED_PBS: 'pbsnodes',
-    SCHED_SLURM: 'sinfo'
-}
-# if SYSTYPE == SYSTYPE_LINUX:
-#     for sched_name in sorted(SCHED_NAME_TESTCMD_DICT.keys()):
-#         try:
-#             proc = subprocess.Popen(SCHED_NAME_TESTCMD_DICT[sched_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-#             if proc.wait() == 0:
-#                 SCHED_SUPPORTED.append(sched_name)
-#         except OSError:
-#             pass
-if len(SCHED_SUPPORTED) == 0:
-    SCHED_SUPPORTED.append(None)
-
+### Argument globals ###
 
 ## Argument strings ("ARGSTR_")
 ARGSTR_SCHEDULER = '--scheduler'
@@ -56,12 +38,42 @@ ARGGRP_OUTDIR = [
     ARGSTR_JOB_LOGDIR
 ]
 
+## Argument defaults ("ARGDEF_")
+ARGDEF_BUNDLEDIR = os.path.realpath(os.path.join(os.path.expanduser('~'), 'scratch', 'task_bundles'))
+
+##############################
+
+### Custom globals ###
+
+JOBSCRIPT_DIR = os.path.join(MODULE_DIR, 'jobscripts')
+JOBSCRIPT_INIT = os.path.join(JOBSCRIPT_DIR, 'init.sh')
+
+SCHED_SUPPORTED = []
+SCHED_PBS = 'pbs'
+SCHED_SLURM = 'slurm'
+SCHED_NAME_TESTCMD_DICT = {
+    SCHED_PBS: 'pbsnodes',
+    SCHED_SLURM: 'sinfo'
+}
+# if SYSTYPE == SYSTYPE_LINUX:
+#     for sched_name in sorted(SCHED_NAME_TESTCMD_DICT.keys()):
+#         try:
+#             proc = subprocess.Popen(SCHED_NAME_TESTCMD_DICT[sched_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#             if proc.wait() == 0:
+#                 SCHED_SUPPORTED.append(sched_name)
+#         except OSError:
+#             pass
+if len(SCHED_SUPPORTED) == 0:
+    SCHED_SUPPORTED.append(None)
+
+##############################
+
 
 def add_scheduler_arguments(parser,
                             job_abbrev,
                             job_walltime,
                             job_memory,
-                            bundledir):
+                            bundledir=ARGDEF_BUNDLEDIR):
     parser.add_argument(
         ARGSTR_SCHEDULER,
         type=str,
@@ -141,7 +153,7 @@ def add_scheduler_arguments(parser,
         ])
     )
     parser.add_argument(
-        ARGSTR_EMAIL,
+        '-m', ARGSTR_EMAIL,
         type=psu_at.ARGTYPE_BOOL_PLUS(
             parse_fn=str),
         nargs='?',

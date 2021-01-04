@@ -256,3 +256,90 @@ COPY_METHOD_DICT = {
     'copy-meta': COPY_METHOD_COPY_META,
     'move': COPY_METHOD_MOVE,
 }
+
+
+##############################
+
+### Argument globals ###
+
+## Argument strings ("ARGSTR_")
+ARGSTR_COPY_METHOD = '--copy-method'
+ARGSTR_SYMLINK_FILES = '--symlink-files'
+ARGSTR_MKDIR_UPON_FILE_COPY = '--mkdir-upon-file-copy'
+ARGSTR_OVERWRITE_FILES = '--overwrite-files'
+ARGSTR_OVERWRITE_DIRS = '--overwrite-dirs'
+ARGSTR_OVERWRITE_DMATCH = '--overwrite-dmatch'
+
+## Argument choices (declare "ARGCHO_{ARGSTR}_{option}" options followed by list of all options as "ARGCHO_{ARGSTR}")
+ARGCHO_COPY_METHOD_COPY = 'copy'
+ARGCHO_COPY_METHOD_MOVE = 'move'
+ARGCHO_COPY_METHOD_LINK = 'link'
+ARGCHO_COPY_METHOD_SYMLINK = 'symlink'
+ARGCHO_COPY_METHOD = [
+    ARGCHO_COPY_METHOD_COPY,
+    ARGCHO_COPY_METHOD_MOVE,
+    ARGCHO_COPY_METHOD_LINK,
+    ARGCHO_COPY_METHOD_SYMLINK
+]
+# Argument choice object mapping ("ARGMAP_" dict of "ARGCHO_" argument options)
+ARGMAP_COPY_METHOD_FUNC = {
+    ARGCHO_COPY_METHOD_COPY: COPY_METHOD_COPY_DEFAULT,
+    ARGCHO_COPY_METHOD_MOVE: COPY_METHOD_MOVE,
+    ARGCHO_COPY_METHOD_LINK: COPY_METHOD_HARDLINK,
+    ARGCHO_COPY_METHOD_SYMLINK: COPY_METHOD_SYMLINK
+}
+
+## Argument defaults ("ARGDEF_")
+ARGDEF_COPY_METHOD = ARGCHO_COPY_METHOD_COPY
+
+##############################
+
+
+def add_copymethod_arguments(parser,
+                             copy_method=ARGDEF_COPY_METHOD):
+    parser.add_argument(
+        '-cm', ARGSTR_COPY_METHOD,
+        type=str,
+        choices=ARGCHO_COPY_METHOD,
+        default=ARGCHO_COPY_METHOD_LINK,
+        help=' '.join([
+            "Which copy method to use when performing all file transfers.",
+        ])
+    )
+
+    parser.add_argument(
+        ARGSTR_SYMLINK_FILES,
+        action='store_true',
+        help=' '.join([
+            "When {}={}, recurse into source folders and create symbolic links within the".format(ARGSTR_COPY_METHOD, ARGCHO_COPY_METHOD_SYMLINK),
+            "destination directory pointing to the files within, instead of creating symbolic"
+            "directory links within the destination pointing to source folders."
+        ])
+    )
+
+    parser.add_argument(
+        '-mufc', ARGSTR_MKDIR_UPON_FILE_COPY,
+        action='store_true',
+        # TODO: Write help string
+        help="[write me]"
+    )
+
+    parser.add_argument(
+        ARGSTR_OVERWRITE_FILES,
+        action='store_true',
+        # TODO: Write help string
+        help="[write me]"
+    )
+    parser.add_argument(
+        ARGSTR_OVERWRITE_DIRS,
+        action='store_true',
+        # TODO: Write help string
+        help="[write me]"
+    )
+    parser.add_argument(
+        ARGSTR_OVERWRITE_DMATCH,
+        action='store_true',
+        # TODO: Write help string
+        help="[write me]"
+    )
+

@@ -1,4 +1,5 @@
 
+import argparse
 import copy
 from datetime import datetime
 from email.mime.text import MIMEText
@@ -17,6 +18,47 @@ from psutils.print_methods import *
 from psutils import PYTHON_VERSION_REQUIRED_MIN
 from psutils.stream import capture_stdout_stderr
 from psutils.func import with_noop
+
+
+##############################
+
+### Argument globals ###
+
+## Argument strings ("ARGSTR_")
+ARGSTR_EMAIL = '--email'
+ARGSTR_QUIET = '--quiet'
+ARGSTR_DEBUG = '--debug'
+ARGSTR_DRYRUN = '--dryrun'
+
+##############################
+
+
+def add_action_arguments(parser):
+    try:
+        parser.add_argument(
+            '-m', ARGSTR_EMAIL,
+            type=str,
+            help="Email address to send notice to upon script completion."
+        )
+    except argparse.ArgumentError:
+        pass
+    parser.add_argument(
+        '-q', ARGSTR_QUIET,
+        action='store_true',
+        # TODO: Write help string
+        help="[write me]"
+    )
+    parser.add_argument(
+        '-db', ARGSTR_DEBUG,
+        action='store_true',
+        # TODO: Write help string
+        help="[write me]"
+    )
+    parser.add_argument(
+        '-dr', ARGSTR_DRYRUN,
+        action='store_true',
+        help="Print actions without executing."
+    )
 
 
 def get_preamble(args=None, sys_argv=None):
@@ -56,7 +98,7 @@ ________________________________________________________
 
 
 def setup_outfile_logging(args):
-    import psutils.logger as psu_log
+    import psutils.log as psu_log
 
     logging_level = psu_log.ARGMAP_LOG_LEVEL_LOGGING_FUNC[args.get(psu_log.ARGSTR_LOG_LEVEL)]
     log_outfile, log_errfile = args.get(psu_log.ARGSTR_LOG_OUTFILE, psu_log.ARGSTR_LOG_ERRFILE)

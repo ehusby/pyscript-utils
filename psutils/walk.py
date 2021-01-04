@@ -14,10 +14,42 @@ except ImportError:
     imported_tqdm = False
 
 import psutils.custom_errors as cerr
+import psutils.copymethod as psu_cm
+import psutils.argtype as psu_at
 from psutils.print_methods import *
 
-import psutils.copymethod as psu_cm
 
+##############################
+
+### Argument globals ###
+
+## Argument strings ("ARGSTR_")
+ARGSTR_MINDEPTH = '--mindepth'
+ARGSTR_MAXDEPTH = '--maxdepth'
+ARGSTR_DMATCH_MAXDEPTH = '--dmatch-maxdepth'
+ARGSTR_FMATCH = '--fmatch'
+ARGSTR_FMATCH_RE = '--fmatch-re'
+ARGSTR_FEXCL = '--fexcl'
+ARGSTR_FEXCL_RE = '--fexcl-re'
+ARGSTR_DMATCH = '--dmatch'
+ARGSTR_DMATCH_RE = '--dmatch-re'
+ARGSTR_DEXCL = '--dexcl'
+ARGSTR_DEXCL_RE = '--dexcl-re'
+
+## Argument groups ("ARGGRP_" lists of "ARGSTR_" argument strings)
+ARGGRP_FILEMATCH = [
+    ARGSTR_FMATCH, ARGSTR_FMATCH_RE, ARGSTR_FEXCL, ARGSTR_FEXCL_RE,
+    ARGSTR_DMATCH, ARGSTR_DMATCH_RE, ARGSTR_DEXCL, ARGSTR_DEXCL_RE,
+]
+
+## Argument defaults ("ARGDEF_")
+ARGDEF_MINDEPTH = 0
+ARGDEF_MAXDEPTH = psu_at.ARGNUM_POS_INF
+ARGDEF_DMATCH_MAXDEPTH = psu_at.ARGNUM_POS_INF
+
+##############################
+
+### Custom globals ###
 
 WALK_LIST_FUNCTION_AVAIL = [os.listdir]
 try:
@@ -40,6 +72,117 @@ FIND_RETURN_ITEMS_DICT = {
     'dirs' : FIND_RETURN_DIRS,
     'mix'  : FIND_RETURN_MIX
 }
+
+##############################
+
+
+def add_walk_arguments(parser,
+                       mindepth=ARGDEF_MINDEPTH,
+                       maxdepth=ARGDEF_MAXDEPTH,
+                       dmatch_maxdepth=ARGDEF_DMATCH_MAXDEPTH):
+    parser.add_argument(
+        '-d0', ARGSTR_MINDEPTH,
+        type=psu_at.ARGTYPE_NUM(argstr=ARGSTR_MINDEPTH,
+            numeric_type=int, allow_neg=False, allow_zero=True, allow_inf=True),
+        default=mindepth,
+        help=' '.join([
+            "Minimum depth of recursive search into source directories for files to copy.",
+            "\nThe depth of a source directory's immediate contents is 1.",
+        ])
+    )
+    parser.add_argument(
+        '-d1', ARGSTR_MAXDEPTH,
+        type=psu_at.ARGTYPE_NUM(argstr=ARGSTR_MAXDEPTH,
+            numeric_type=int, allow_neg=False, allow_zero=True, allow_inf=True),
+        default=maxdepth,
+        help=' '.join([
+            "Maximum depth of recursive search into source directories for files to copy.",
+            "\nThe depth of a source directory's immediate contents is 1.",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_DMATCH_MAXDEPTH,
+        type=psu_at.ARGTYPE_NUM(argstr=ARGSTR_DMATCH_MAXDEPTH,
+            numeric_type=int, allow_neg=False, allow_zero=True, allow_inf=True),
+        default=dmatch_maxdepth,
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+
+    parser.add_argument(
+        ARGSTR_FMATCH,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_FMATCH_RE,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_FEXCL,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_FEXCL_RE,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+
+    parser.add_argument(
+        ARGSTR_DMATCH,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_DMATCH_RE,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_DEXCL,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_DEXCL_RE,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
 
 
 def walk_simple(srcdir, mindepth=0, maxdepth=float('inf'), list_srcdname=False,
@@ -199,8 +342,7 @@ class WalkObject(object):
         fsub=None, dsub=None,
         copy_method=None, copy_overwrite_files=False, copy_overwrite_dirs=False, copy_overwrite_dmatch=False, transplant_tree=False, collapse_tree=False,
         copy_dryrun=False, copy_quiet=False, copy_debug=False,
-        symlink_dirs=False,
-        move_dirs=True,
+        allow_rootdir_op=None,
         mkdir_upon_file_copy=False,
         allow_nonstd_shprogs=False,
         copy_shcmd_fmtstr=None,
@@ -341,19 +483,8 @@ class WalkObject(object):
                 copy_debug=copy_debug
             )
 
-        if symlink_dirs:
-            if copy_method is not None and copy_method.action_verb.upper() == 'SYMLINKING':
-                pass
-            else:
-                # raise cerr.InvalidArgumentError("`symlink_dirs` can only be True when a linking-type copy method is provided")
-                symlink_dirs = False
-
-        if move_dirs:
-            if copy_method is not None and copy_method.action_verb.upper() == 'MOVING':
-                pass
-            else:
-                # raise cerr.InvalidArgumentError("`move_dirs` can only be True when a move-type copy method is provided")
-                move_dirs = False
+        if allow_rootdir_op is None and copy_method.action_verb.upper() in ('SYMLINKING', 'MOVING'):
+            allow_rootdir_op = True
 
         self.srcdir = None
         self.dstdir = None
@@ -371,8 +502,7 @@ class WalkObject(object):
         self.transplant_tree = transplant_tree
         self.collapse_tree = collapse_tree
         self.collapse_tree_inst = collapse_tree
-        self.symlink_dirs = symlink_dirs
-        self.move_dirs = move_dirs
+        self.allow_rootdir_op = allow_rootdir_op
         self.mkdir_upon_file_copy = mkdir_upon_file_copy
         self.list_function = list_function
         self.rematch_function = rematch_function
@@ -437,7 +567,9 @@ class WalkObject(object):
             if srcdname_match:
                 dmatch_depth = 1
 
-        if (self.symlink_dirs or self.move_dirs) and dmatch_depth != 0 and (self.mindepth <= depth <= self.maxdepth):
+        if self.allow_rootdir_op and dmatch_depth != 0 and (self.mindepth <= depth <= self.maxdepth):
+            if not self.copy_method_inst.dryrun:
+                os.makedirs(os.path.dirname(os.path.abspath(self.dstdir)), exist_ok=True)
             copy_success = self.copy_method_inst.copy(
                 self.srcdir, self.dstdir,
                 overwrite_dir=(self.copy_method_inst.copy_overwrite_dirs or (self.copy_overwrite_dmatch and dmatch_depth == 1))
@@ -610,7 +742,7 @@ class WalkObject(object):
                             dstdname_next = self.resub_function(re_pattern, repl_str, dstdname_next)
                     dstdir_next = os.path.join(dstdir, dstdname_next)
 
-                if (self.symlink_dirs or self.move_dirs) and srcdir_next_passes and depth >= self.mindepth:
+                if self.allow_rootdir_op and srcdir_next_passes and depth >= self.mindepth:
                     copy_success = self.copy_method_inst.copy(
                         srcdir_next, dstdir_next,
                         overwrite_dir=(self.copy_method.copy_overwrite_dirs or self.copy_overwrite_dmatch)
@@ -628,8 +760,7 @@ def _walk(
     fsub=None, dsub=None,
     copy_method=None, copy_overwrite_files=False, copy_overwrite_dirs=False, copy_overwrite_dmatch=False, transplant_tree=False, collapse_tree=False,
     copy_dryrun=False, copy_quiet=False, copy_debug=False,
-    symlink_dirs=False,
-    move_dirs=False,
+    allow_rootdir_op=None,
     mkdir_upon_file_copy=False,
     allow_nonstd_shprogs=False,
     copy_shcmd_fmtstr=None,
@@ -651,8 +782,7 @@ def _walk(
         fsub, dsub,
         copy_method, copy_overwrite_files, copy_overwrite_dirs, copy_overwrite_dmatch, transplant_tree, collapse_tree,
         copy_dryrun, copy_quiet, copy_debug,
-        symlink_dirs,
-        move_dirs,
+        allow_rootdir_op,
         mkdir_upon_file_copy,
         allow_nonstd_shprogs,
         copy_shcmd_fmtstr,
@@ -698,8 +828,7 @@ def find(
     fsub=None, dsub=None,
     copy_method=None, copy_overwrite_files=False, copy_overwrite_dirs=False, transplant_tree=False, collapse_tree=False,
     copy_dryrun=False, copy_quiet=False, copy_debug=False,
-    symlink_dirs=False,
-    move_dirs=False,
+    allow_rootdir_op=None,
     mkdir_upon_file_copy=False,
     allow_nonstd_shprogs=False,
     copy_shcmd_fmtstr=None,
@@ -756,8 +885,7 @@ def find(
             fsub, dsub,
             copy_method, copy_overwrite_files, copy_overwrite_dirs, transplant_tree, collapse_tree,
             copy_dryrun, copy_quiet, copy_debug,
-            symlink_dirs,
-            move_dirs,
+            allow_rootdir_op,
             mkdir_upon_file_copy,
             allow_nonstd_shprogs,
             copy_shcmd_fmtstr,
@@ -832,8 +960,7 @@ def copy_tree(
     fsub=None, dsub=None,
     vreturn=None, vyield=None, print_findings=False, list_srcdname=False,
     dryrun=False, quiet=False, debug=False,
-    symlink_dirs=False,
-    move_dirs=False,
+    allow_rootdir_op=None,
     mkdir_upon_file_copy=False,
     allow_nonstd_shprogs=False,
     copy_shcmd_fmtstr=None,
@@ -855,8 +982,7 @@ def copy_tree(
         fsub, dsub,
         copy_method, overwrite, transplant_tree, collapse_tree,
         dryrun, quiet, debug,
-        symlink_dirs,
-        move_dirs,
+        allow_rootdir_op,
         mkdir_upon_file_copy,
         allow_nonstd_shprogs,
         copy_shcmd_fmtstr,

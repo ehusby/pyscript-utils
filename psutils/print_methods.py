@@ -2,7 +2,7 @@
 from __future__ import print_function
 import sys
 
-import psutils.logger
+import psutils.log
 
 
 def eprint(*args, **kwargs):
@@ -16,13 +16,13 @@ error = eprint
 critical = eprint
 
 
-if len(psutils.logger.PSUTILS_LOGGER.handlers) > 0:
+if len(psutils.log.PSUTILS_LOGGER.handlers) > 0:
 
-    debug = psutils.logger.PSUTILS_LOGGER.debug
-    info = psutils.logger.PSUTILS_LOGGER.info
-    warning = psutils.logger.PSUTILS_LOGGER.warning
-    error = psutils.logger.PSUTILS_LOGGER.error
-    critical = psutils.logger.PSUTILS_LOGGER.critical
+    debug = psutils.log.PSUTILS_LOGGER.debug
+    info = psutils.log.PSUTILS_LOGGER.info
+    warning = psutils.log.PSUTILS_LOGGER.warning
+    error = psutils.log.PSUTILS_LOGGER.error
+    critical = psutils.log.PSUTILS_LOGGER.critical
 
     print = info
     eprint = error
