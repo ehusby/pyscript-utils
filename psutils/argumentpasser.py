@@ -204,12 +204,12 @@ class ArgumentPasser(object):
 
     def _argval2str(self, item):
         if type(item) is str:
-            if item.startswith('"') and item.endswith('"'):
-                item_str = item
-            elif item.startswith("'") and item.endswith("'"):
-                item_str = item
+            if item.startswith("'") and item.endswith("'"):
+                item_str = r"\'{}\'".format(item[1:-1])
+            elif item.startswith('"') and item.endswith('"'):
+                item_str = r'\"{}\"'.format(item[1:-1])
             else:
-                item_str = '"{}"'.format(item)
+                item_str = r'\"{}\"'.format(item)
         else:
             item_str = '{}'.format(item)
         return item_str
@@ -245,7 +245,7 @@ class ArgumentPasser(object):
                     posarg_list.append(' '.join([self._argval2str(item) for item in val]))
                 else:
                     posarg_list.append(self._argval2str(val))
-        self.cmd = """ {} "{}" {} {} """.format(self.exe, self.script_file, " ".join(posarg_list), self.cmd_optarg_base)
+        self.cmd = """ {} {} {} {} """.format(self.exe, self._argval2str(self.script_file), ' '.join(posarg_list), self.cmd_optarg_base)
 
     def get_cmd(self):
         return self.cmd
