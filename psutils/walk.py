@@ -342,7 +342,7 @@ class WalkObject(object):
         fsub=None, dsub=None,
         copy_method=None, copy_overwrite_files=False, copy_overwrite_dirs=False, copy_overwrite_dmatch=False, transplant_tree=False, collapse_tree=False,
         copy_dryrun=False, copy_quiet=False, copy_debug=False,
-        allow_rootdir_op=None,
+        allow_dir_op=None,
         mkdir_upon_file_copy=False,
         allow_nonstd_shprogs=False,
         copy_shcmd_fmtstr=None,
@@ -483,8 +483,8 @@ class WalkObject(object):
                 copy_debug=copy_debug
             )
 
-        if allow_rootdir_op is None and copy_method.action_verb.upper() in ('SYMLINKING', 'MOVING'):
-            allow_rootdir_op = True
+        if allow_dir_op is None and copy_method.action_verb.upper() in ('SYMLINKING', 'MOVING'):
+            allow_dir_op = True
 
         self.srcdir = None
         self.dstdir = None
@@ -502,7 +502,7 @@ class WalkObject(object):
         self.transplant_tree = transplant_tree
         self.collapse_tree = collapse_tree
         self.collapse_tree_inst = collapse_tree
-        self.allow_rootdir_op = allow_rootdir_op
+        self.allow_dir_op = allow_dir_op
         self.mkdir_upon_file_copy = mkdir_upon_file_copy
         self.list_function = list_function
         self.rematch_function = rematch_function
@@ -567,7 +567,7 @@ class WalkObject(object):
             if srcdname_match:
                 dmatch_depth = 1
 
-        if self.allow_rootdir_op and dmatch_depth != 0 and (self.mindepth <= depth <= self.maxdepth):
+        if self.allow_dir_op and dmatch_depth != 0 and (self.mindepth <= depth <= self.maxdepth):
             if not self.copy_method_inst.dryrun:
                 os.makedirs(os.path.dirname(os.path.abspath(self.dstdir)), exist_ok=True)
             copy_success = self.copy_method_inst.copy(
@@ -742,7 +742,7 @@ class WalkObject(object):
                             dstdname_next = self.resub_function(re_pattern, repl_str, dstdname_next)
                     dstdir_next = os.path.join(dstdir, dstdname_next)
 
-                if self.allow_rootdir_op and srcdir_next_passes and depth >= self.mindepth:
+                if self.allow_dir_op and srcdir_next_passes and depth >= self.mindepth:
                     copy_success = self.copy_method_inst.copy(
                         srcdir_next, dstdir_next,
                         overwrite_dir=(self.copy_method.copy_overwrite_dirs or self.copy_overwrite_dmatch)
@@ -760,7 +760,7 @@ def _walk(
     fsub=None, dsub=None,
     copy_method=None, copy_overwrite_files=False, copy_overwrite_dirs=False, copy_overwrite_dmatch=False, transplant_tree=False, collapse_tree=False,
     copy_dryrun=False, copy_quiet=False, copy_debug=False,
-    allow_rootdir_op=None,
+    allow_dir_op=None,
     mkdir_upon_file_copy=False,
     allow_nonstd_shprogs=False,
     copy_shcmd_fmtstr=None,
@@ -782,7 +782,7 @@ def _walk(
         fsub, dsub,
         copy_method, copy_overwrite_files, copy_overwrite_dirs, copy_overwrite_dmatch, transplant_tree, collapse_tree,
         copy_dryrun, copy_quiet, copy_debug,
-        allow_rootdir_op,
+        allow_dir_op,
         mkdir_upon_file_copy,
         allow_nonstd_shprogs,
         copy_shcmd_fmtstr,
@@ -828,7 +828,7 @@ def find(
     fsub=None, dsub=None,
     copy_method=None, copy_overwrite_files=False, copy_overwrite_dirs=False, transplant_tree=False, collapse_tree=False,
     copy_dryrun=False, copy_quiet=False, copy_debug=False,
-    allow_rootdir_op=None,
+    allow_dir_op=None,
     mkdir_upon_file_copy=False,
     allow_nonstd_shprogs=False,
     copy_shcmd_fmtstr=None,
@@ -885,7 +885,7 @@ def find(
             fsub, dsub,
             copy_method, copy_overwrite_files, copy_overwrite_dirs, transplant_tree, collapse_tree,
             copy_dryrun, copy_quiet, copy_debug,
-            allow_rootdir_op,
+            allow_dir_op,
             mkdir_upon_file_copy,
             allow_nonstd_shprogs,
             copy_shcmd_fmtstr,
@@ -960,7 +960,7 @@ def copy_tree(
     fsub=None, dsub=None,
     vreturn=None, vyield=None, print_findings=False, list_srcdname=False,
     dryrun=False, quiet=False, debug=False,
-    allow_rootdir_op=None,
+    allow_dir_op=None,
     mkdir_upon_file_copy=False,
     allow_nonstd_shprogs=False,
     copy_shcmd_fmtstr=None,
@@ -982,7 +982,7 @@ def copy_tree(
         fsub, dsub,
         copy_method, overwrite, transplant_tree, collapse_tree,
         dryrun, quiet, debug,
-        allow_rootdir_op,
+        allow_dir_op,
         mkdir_upon_file_copy,
         allow_nonstd_shprogs,
         copy_shcmd_fmtstr,
