@@ -25,6 +25,7 @@ ARGSTR_SRCLIST_ROOTED = '--srclist-rooted'
 ARGSTR_SRCLIST_PREFIX = '--srclist-prefix'
 ARGSTR_SRCLIST_PREFIX_DST = '--srclist-prefix-dst'
 ARGSTR_SRCLIST_SUFFIX = '--srclist-suffix'
+ARGSTR_SRCLIST_ROOTDIR = '--srclist-rootdir'
 ARGSTR_SRCLIST_DELIM = '--srclist-delim'
 ARGSTR_SRCLIST_NOGLOB = '--srclist-noglob'
 ARGSTR_SYNC_TREE = '--sync-tree'
@@ -154,7 +155,7 @@ def add_srclist_arguments(parser,
             existcheck_fn=os.path.isdir,
             existcheck_reqval=True),
         help=' '.join([
-            "Directory path to prepend to all source paths in {} textfiles.".format(ARGSTR_SRCLIST),
+            "Directory path to prepend to all source paths in {} and {} textfiles.".format(ARGSTR_SRCLIST, ARGSTR_SRCLIST_ROOTED),
         ])
     )
     parser.add_argument(
@@ -165,14 +166,26 @@ def add_srclist_arguments(parser,
             accesscheck_reqtrue=os.W_OK,
             accesscheck_parent_if_dne=True),
         help=' '.join([
-            "Directory path to prepend to all destination paths in {} textfiles.".format(ARGSTR_SRCLIST),
+            "Directory path to prepend to all destination paths in {} and {} textfiles.".format(ARGSTR_SRCLIST, ARGSTR_SRCLIST_ROOTED),
         ])
     )
     parser.add_argument(
         '-sls', ARGSTR_SRCLIST_SUFFIX,
         type=str,
         help=' '.join([
-            "String to append to all source paths in {} textfiles.".format(ARGSTR_SRCLIST),
+            "String to append to all source paths in {} and {} textfiles.".format(ARGSTR_SRCLIST, ARGSTR_SRCLIST_ROOTED),
+        ])
+    )
+
+    parser.add_argument(
+        '-slrd', ARGSTR_SRCLIST_ROOTDIR,
+        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_SRCLIST_PREFIX,
+            existcheck_fn=os.path.isdir,
+            existcheck_reqval=True),
+        help=' '.join([
+            "Root directory used for source paths in {} textfiles when determining relative".format(ARGSTR_SRCLIST),
+            "paths within destination directories. This path will be prepended to all source paths",
+            "that do not already start with this absolute path."
         ])
     )
 
@@ -598,6 +611,7 @@ def parse_src_args(args, argstr_src, argstr_dst):
     arg_srclist_prefix = args.get(ARGSTR_SRCLIST_PREFIX)
     arg_srclist_prefix_dst = args.get(ARGSTR_SRCLIST_PREFIX_DST)
     arg_srclist_suffix = args.get(ARGSTR_SRCLIST_SUFFIX)
+    arg_srclist_rootdir = args.get(ARGSTR_SRCLIST_ROOTDIR)
     arg_srclist_noglob = args.get(ARGSTR_SRCLIST_NOGLOB)
 
     if args.get(ARGSTR_SYNC_TREE):
@@ -674,6 +688,9 @@ def parse_src_args(args, argstr_src, argstr_dst):
                     task_src = os.path.join(arg_srclist_prefix, task_src)
                 if arg_srclist_suffix is not None:
                     task_src = task_src + arg_srclist_suffix
+                if arg_srclist_rootdir is not None:
+                    if not task_src.startswith(arg_srclist_rootdir):
+                        task_src = os.path.join(arg_srclist_rootdir, task_src)
                 if (not arg_srclist_noglob and '*' in task_src) or os.path.exists(task_src):
                     pass
                 else:
@@ -684,7 +701,11 @@ def parse_src_args(args, argstr_src, argstr_dst):
                 ))
 
             if len(tasklist.tasks) > 0:
-                srclist_tasklists.append(tasklist)
+                if arg_srclist_rootdir is not None:
+                    tasklist.header = [arg_srclist_rootdir]
+                    srclist_rooted_tasklists.append(tasklist)
+                else:
+                    srclist_tasklists.append(tasklist)
 
     if args.get(ARGSTR_SRCLIST_ROOTED):
         for srclist_file in args.get(ARGSTR_SRCLIST_ROOTED):
@@ -737,6 +758,10 @@ def parse_src_args(args, argstr_src, argstr_dst):
                         ))
                 else:
                     task_src = task
+                if arg_srclist_prefix is not None:
+                    task_src = os.path.join(arg_srclist_prefix, task_src)
+                if arg_srclist_suffix is not None:
+                    task_src = task_src + arg_srclist_suffix
                 if (not arg_srclist_noglob and '*' in task_src) or os.path.exists(task_src):
                     pass
                 else:
@@ -830,6 +855,8 @@ def parse_src_args(args, argstr_src, argstr_dst):
     for tasklist in srclist_rooted_tasklists:
 
         src_rootdir = tasklist.header[0]
+        if arg_srclist_prefix is not None:
+            src_rootdir = os.path.join(arg_srclist_prefix, src_rootdir)
 
         if not os.path.isdir(src_rootdir):
             args.parser.error(
@@ -862,11 +889,19 @@ def parse_src_args(args, argstr_src, argstr_dst):
                 src_path = task
                 dst_rootdir = tasklist_dst_rootdir if tasklist_dst_rootdir is not None else arg_dst
 
+            if arg_srclist_prefix_dst is not None:
+                dst_rootdir = os.path.join(arg_srclist_prefix_dst, dst_rootdir)
+
             if os.path.isfile(dst_rootdir):
                 args.parser.error(
                     "{} {}; destination root directory cannot be an existing file: {}".format(
                     ARGSTR_SRCLIST_ROOTED, tasklist.tasklist_file, dst_rootdir
                 ))
+
+            if arg_srclist_prefix is not None:
+                src_path = os.path.join(arg_srclist_prefix, src_path)
+            if arg_srclist_suffix is not None:
+                src_path = src_path + arg_srclist_suffix
 
             if not src_path.startswith(src_rootdir):
                 # Assume source path is relative from the source root directory
