@@ -175,13 +175,14 @@ ARGDEF_HARDLINK_RECORD_DIR = os.path.realpath(os.path.join(os.path.expanduser('~
 
 ### Logging argument defaults ###
 
-ARGDEF_LOG_LEVEL = psu_log.ARGCHO_LOG_LEVEL_INFO
-ARGDEF_LOG_TASK_LEVEL = psu_log.ARGCHO_LOG_LEVEL_INFO
 ARGDEF_LOG_OUTFILE = None
 ARGDEF_LOG_ERRFILE = None
 ARGDEF_LOG_TASK_OUTEXT = None
 ARGDEF_LOG_TASK_ERREXT = None
 ARGDEF_LOG_OUTDIR = None
+ARGDEF_LOG_LEVEL = psu_log.ARGCHO_LOG_LEVEL_INFO
+ARGDEF_LOG_TASK_LEVEL = psu_log.ARGCHO_LOG_LEVEL_INFO
+ARGDEF_LOG_MODE = psu_log.ARGCHO_LOG_MODE_APPEND
 
 ### Scheduler settings ###
 
@@ -316,7 +317,16 @@ def argparser_init():
         ARGDEF_BUNDLEDIR,
     )
 
-    psu_log.add_logging_arguments(parser)
+    psu_log.add_logging_arguments(parser,
+        ARGDEF_LOG_OUTFILE,
+        ARGDEF_LOG_ERRFILE,
+        ARGDEF_LOG_TASK_OUTEXT,
+        ARGDEF_LOG_TASK_ERREXT,
+        ARGDEF_LOG_OUTDIR,
+        ARGDEF_LOG_LEVEL,
+        ARGDEF_LOG_TASK_LEVEL,
+        ARGDEF_LOG_MODE
+    )
 
     psu_act.add_action_arguments(parser)
 
@@ -324,7 +334,6 @@ def argparser_init():
 
 
 def main():
-    # from psutils.print_methods_logging import *
 
     ### Parse script arguments
     pre_argparse()
@@ -332,10 +341,12 @@ def main():
     args = psu_act.parse_args(PYTHON_EXE, SCRIPT_FILE, arg_parser, sys.argv,
                               DOUBLED_ARGS, DOUBLED_ARGS_RESTRICTED_OPTGRP)
     ### Setup logging
-    psu_log.PSUTILS_LOGGER.handlers = []
-    psu_log.setup_logging(handler_level=(logging.DEBUG if args.get(psu_act.ARGSTR_DEBUG) else logging.INFO))
+    psu_log.setup_logging(capture_warnings=True)
+    if args.get(psu_act.ARGSTR_DEBUG):
+        psu_log.set_logger_level(psu_log.LEVEL_DEBUG)
     psu_act.setup_outfile_logging(args)
-    logging_level_task = psu_log.ARGMAP_LOG_LEVEL_LOGGING_FUNC[args.get(psu_log.ARGSTR_LOG_TASK_LEVEL)]
+    task_log_level = psu_log.ARGMAP_LOG_LEVEL[args.get(psu_log.ARGSTR_LOG_TASK_LEVEL)]
+    task_log_fh_mode = psu_log.ARGMAP_LOG_MODE_FH_MODE[args.get(psu_log.ARGSTR_LOG_MODE)]
 
 
     ### Adjust, Validate, and further Parse script argument values
@@ -443,8 +454,8 @@ def perform_tasks(args, task_list):
             copy_debug=args.get(psu_act.ARGSTR_DEBUG)
         )
 
-    # for task_srcpath, task_dstpath in tqdm(task_list):
-    for task_srcpath, task_dstpath in task_list:
+    for task_srcpath, task_dstpath in tqdm(task_list):
+    # for task_srcpath, task_dstpath in task_list:
         if os.path.isfile(task_srcpath):
             task_srcfile = task_srcpath
             task_dstfile = task_dstpath

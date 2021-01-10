@@ -100,14 +100,26 @@ ________________________________________________________
 def setup_outfile_logging(args):
     import psutils.log as psu_log
 
-    logging_level = psu_log.ARGMAP_LOG_LEVEL_LOGGING_FUNC[args.get(psu_log.ARGSTR_LOG_LEVEL)]
     log_outfile, log_errfile = args.get(psu_log.ARGSTR_LOG_OUTFILE, psu_log.ARGSTR_LOG_ERRFILE)
+
+    if log_outfile is None and log_errfile is None:
+        return
 
     if log_outfile is not None and log_errfile is None:
         log_errfile = log_outfile
 
-    if log_outfile is not None or log_errfile is not None:
-        psu_log.setup_logging(outfile=log_outfile, errfile=log_errfile, handler_level=logging_level)
+    logging_level = psu_log.ARGMAP_LOG_LEVEL[args.get(psu_log.ARGSTR_LOG_LEVEL)]
+    file_handler_mode = psu_log.ARGMAP_LOG_MODE_FH_MODE[args.get(psu_log.ARGSTR_LOG_MODE)]
+
+    psu_logger_level = psu_log.get_logger_level()
+    if logging_level < psu_logger_level:
+        psu_log.set_stream_handler_level(psu_logger_level)
+
+    psu_log.setup_log_files(
+        logger_level=logging_level, handler_level=logging_level,
+        file_out=log_outfile, file_err=log_errfile,
+        file_handler_mode=file_handler_mode
+    )
 
 
 def get_script_arg_values(argstr, nvals=1, dtype=str, list_single_value=False):
