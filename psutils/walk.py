@@ -31,10 +31,12 @@ ARGSTR_FMATCH = '--fmatch'
 ARGSTR_FMATCH_RE = '--fmatch-re'
 ARGSTR_FEXCL = '--fexcl'
 ARGSTR_FEXCL_RE = '--fexcl-re'
+ARGSTR_FSUB_RE = '--fsub-re'
 ARGSTR_DMATCH = '--dmatch'
 ARGSTR_DMATCH_RE = '--dmatch-re'
 ARGSTR_DEXCL = '--dexcl'
 ARGSTR_DEXCL_RE = '--dexcl-re'
+ARGSTR_DSUB_RE = '--dsub-re'
 
 ## Argument groups ("ARGGRP_" lists of "ARGSTR_" argument strings)
 ARGGRP_FILEMATCH = [
@@ -146,6 +148,15 @@ def add_walk_arguments(parser,
             "[write me]",
         ])
     )
+    parser.add_argument(
+        ARGSTR_FSUB_RE,
+        type=str,
+        nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
 
     parser.add_argument(
         ARGSTR_DMATCH,
@@ -178,6 +189,15 @@ def add_walk_arguments(parser,
         ARGSTR_DEXCL_RE,
         type=str,
         nargs='+',
+        action='append',
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_DSUB_RE,
+        type=str,
+        nargs=2,
         action='append',
         help=' '.join([
             "[write me]",

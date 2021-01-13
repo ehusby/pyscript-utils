@@ -435,6 +435,7 @@ def perform_tasks(args, task_list):
         fexcl=args.get(psu_walk.ARGSTR_FEXCL), fexcl_re=args.get(psu_walk.ARGSTR_FEXCL_RE),
         dmatch=args.get(psu_walk.ARGSTR_DMATCH), dmatch_re=args.get(psu_walk.ARGSTR_DMATCH_RE),
         dexcl=args.get(psu_walk.ARGSTR_DEXCL), dexcl_re=args.get(psu_walk.ARGSTR_DEXCL_RE),
+        fsub=args.get(psu_walk.ARGSTR_FSUB_RE), dsub=args.get(psu_walk.ARGSTR_DSUB_RE),
         copy_method=copy_method_obj, copy_overwrite_files=args.get(psu_cm.ARGSTR_OVERWRITE_FILES), copy_overwrite_dirs=args.get(psu_cm.ARGSTR_OVERWRITE_DIRS), copy_overwrite_dmatch=args.get(psu_cm.ARGSTR_OVERWRITE_DMATCH),
         allow_dir_op=(False if args.get(psu_cm.ARGSTR_SYMLINK_FILES) else None), mkdir_upon_file_copy=args.get(psu_cm.ARGSTR_MKDIR_UPON_FILE_COPY),
         transplant_tree=False, collapse_tree=args.get(psu_tl.ARGSTR_COLLAPSE_TREE),
