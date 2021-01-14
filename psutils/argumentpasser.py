@@ -214,6 +214,9 @@ class ArgumentPasser(object):
             item_str = '{}'.format(item)
         return item_str
 
+    def _escape_comma(self, str_item):
+        return str_item.replace(',', '|COMMA|')
+
     def _update_cmd_base(self):
         arg_list = []
         for varstr, val in self.vars_dict.items():
@@ -276,9 +279,11 @@ class ArgumentPasser(object):
 
         if envvars is not None:
             if type(envvars) in (tuple, list):
-                cmd_envvars = ','.join(['p{}="{}"'.format(i, a) for i, a in enumerate(envvars)])
+                cmd_envvars = ','.join(['p{}="{}"'.format(i, self._escape_comma(a))
+                                        for i, a in enumerate(envvars)])
             elif type(envvars) == dict:
-                cmd_envvars = ','.join(['{}="{}"'.format(var_name, var_val) for var_name, var_val in envvars.items()])
+                cmd_envvars = ','.join(['{}="{}"'.format(var_name, self._escape_comma(var_val))
+                                        for var_name, var_val in envvars.items()])
 
         if scheduler == SCHED_PBS:
             cmd = ' '.join([
