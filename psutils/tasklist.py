@@ -28,6 +28,7 @@ ARGSTR_SRCLIST_SUFFIX = '--srclist-suffix'
 ARGSTR_SRCLIST_ROOTDIR = '--srclist-rootdir'
 ARGSTR_SRCLIST_DELIM = '--srclist-delim'
 ARGSTR_SRCLIST_NOGLOB = '--srclist-noglob'
+ARGSTR_SRCLIST_IGNORE_MISSING = '--srclist-ignore-missing'
 ARGSTR_SYNC_TREE = '--sync-tree'
 ARGSTR_TRANSPLANT_TREE = '--transplant-tree'
 ARGSTR_COLLAPSE_TREE = '--collapse-tree'
@@ -203,6 +204,11 @@ def add_srclist_arguments(parser,
         help=' '.join([
             "Do not interpret '*' character as a wildcard for path-globbing in {} and {} textfiles.".format(ARGSTR_SRCLIST, ARGSTR_SRCLIST_ROOTED),
         ])
+    )
+    parser.add_argument(
+        '-slim', ARGSTR_SRCLIST_IGNORE_MISSING,
+        action='store_true',
+        help="[write me]"
     )
 
     parser.add_argument(
@@ -680,10 +686,13 @@ def parse_src_args(args, argstr_src, argstr_dst):
                         ARGSTR_SRCLIST, srclist_file, ARGSTR_SRCLIST, ARGHLP_SRCLIST_FORMAT
                 ))
 
+            tasklist_tasks_sanitized = []
             tasklist_src_dne = []
             task_type_is_list = (len(tasklist.tasks) > 0 and type(tasklist.tasks[0]) is list)
+
             for task in tasklist.tasks:
                 task_src = task[0] if task_type_is_list else task
+
                 if arg_srclist_prefix is not None:
                     task_src = os.path.join(arg_srclist_prefix, task_src)
                 if arg_srclist_suffix is not None:
@@ -691,11 +700,16 @@ def parse_src_args(args, argstr_src, argstr_dst):
                 if arg_srclist_rootdir is not None:
                     if not task_src.startswith(arg_srclist_rootdir):
                         task_src = os.path.join(arg_srclist_rootdir, task_src)
+
                 if (not arg_srclist_noglob and '*' in task_src) or os.path.exists(task_src):
-                    pass
+                    if args.get(ARGSTR_SRCLIST_IGNORE_MISSING):
+                        tasklist_tasks_sanitized.append(task)
                 else:
                     tasklist_src_dne.append(task_src)
-            if len(tasklist_src_dne) > 0:
+
+            if args.get(ARGSTR_SRCLIST_IGNORE_MISSING):
+                tasklist.tasks = tasklist_tasks_sanitized
+            elif len(tasklist_src_dne) > 0:
                 args.parser.error("{} {}; source paths do not exist:\n{}".format(
                     ARGSTR_SRCLIST, srclist_file, '\n'.join(tasklist_src_dne)
                 ))
@@ -746,8 +760,10 @@ def parse_src_args(args, argstr_src, argstr_dst):
                     ARGSTR_SRCLIST_ROOTED, srclist_file, ARGSTR_SRCLIST_ROOTED, ARGHLP_SRCLIST_ROOTED_FORMAT
                 ))
 
+            tasklist_tasks_sanitized = []
             tasklist_src_dne = []
             task_type_is_list = (len(tasklist.tasks) > 0 and type(tasklist.tasks[0]) is list)
+
             for task in tasklist.tasks:
                 if task_type_is_list:
                     task_src, task_dst_rootdir = task
@@ -758,15 +774,20 @@ def parse_src_args(args, argstr_src, argstr_dst):
                         ))
                 else:
                     task_src = task
+
                 if arg_srclist_prefix is not None:
                     task_src = os.path.join(arg_srclist_prefix, task_src)
                 if arg_srclist_suffix is not None:
                     task_src = task_src + arg_srclist_suffix
                 if (not arg_srclist_noglob and '*' in task_src) or os.path.exists(task_src):
-                    pass
+                    if args.get(ARGSTR_SRCLIST_IGNORE_MISSING):
+                        tasklist_tasks_sanitized.append(task)
                 else:
                     tasklist_src_dne.append(task_src)
-            if len(tasklist_src_dne) > 0:
+
+            if args.get(ARGSTR_SRCLIST_IGNORE_MISSING):
+                tasklist.tasks = tasklist_tasks_sanitized
+            elif len(tasklist_src_dne) > 0:
                 args.parser.error("{} {}; source paths do not exist:\n{}".format(
                     ARGSTR_SRCLIST_ROOTED, srclist_file, '\n'.join(tasklist_src_dne)
                 ))
