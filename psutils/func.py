@@ -1,4 +1,5 @@
 
+from collections import deque
 import contextlib
 
 
@@ -22,3 +23,6 @@ def with_noop():
         yield None
     finally:
         pass
+
+def exhaust(generator):
+    deque(generator, maxlen=0)

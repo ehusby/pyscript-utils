@@ -18,6 +18,8 @@ import psutils.copymethod as psu_cm
 import psutils.argtype as psu_at
 from psutils.print_methods import *
 
+from psutils.func import exhaust
+
 
 ##############################
 
@@ -66,14 +68,24 @@ except AttributeError:
 WALK_REMATCH_PARTIAL_FUNCTION_DEFAULT = re.search
 WALK_RESUB_FUNCTION_DEFAULT = re.sub
 
-FIND_RETURN_FILES = 1
-FIND_RETURN_DIRS = 2
-FIND_RETURN_MIX = 3
-FIND_RETURN_ITEMS_DICT = {
-    'files': FIND_RETURN_FILES,
-    'dirs' : FIND_RETURN_DIRS,
-    'mix'  : FIND_RETURN_MIX
+WALK_TRACK_FILES = 'files'
+WALK_TRACK_DIRS = 'dirs'
+WALK_TRACK_BOTH = 'both'
+WALK_TRACK_ITEM_UNIT_DICT = {
+    WALK_TRACK_FILES: 'file',
+    WALK_TRACK_DIRS: 'folder',
+    WALK_TRACK_BOTH: 'dirent'
 }
+WALK_TRACK_CHOICES = list(WALK_TRACK_ITEM_UNIT_DICT.keys())
+
+FIND_RETURN_FILES = 'files'
+FIND_RETURN_DIRS = 'dirs'
+FIND_RETURN_MIX = 'mix'
+FIND_RETURN_CHOICES = [
+    FIND_RETURN_FILES,
+    FIND_RETURN_DIRS,
+    FIND_RETURN_MIX
+]
 
 ##############################
 
@@ -206,33 +218,75 @@ def add_walk_arguments(parser,
 
 
 def walk_simple(srcdir, mindepth=0, maxdepth=float('inf'), list_srcdname=False,
-                list_function=WALK_LIST_FUNCTION_DEFAULT, show_progress=False):
+                list_function=WALK_LIST_FUNCTION_DEFAULT,
+                track_item=None, track_initialize_total=True):
 
     if not os.path.isdir(srcdir):
         raise cerr.InvalidArgumentError("`srcdir` directory does not exist: {}".format(srcdir))
     if mindepth < 0 or maxdepth < 0:
         raise cerr.InvalidArgumentError("depth arguments must be >= 0")
-    if show_progress and not imported_tqdm:
-        raise cerr.InvalidArgumentError("Python package 'tqdm' must be available to use `show_progress` option")
+    if track_item is not None:
+        if not imported_tqdm:
+            raise cerr.InvalidArgumentError("Python package 'tqdm' must be available to use `track_item` option")
+        if track_item not in WALK_TRACK_CHOICES:
+            raise cerr.InvalidArgumentError("`track_item` argument must be one of {}, "
+                                            "but was {}".format(WALK_TRACK_CHOICES, track_item))
+        track_item_unit = WALK_TRACK_ITEM_UNIT_DICT[track_item]
+    else:
+        track_item_unit = None
+    if maxdepth == 0:
+        track_initialize_total = False
 
     srcdir = os.path.abspath(srcdir)
-    if show_progress:
-        my_tftc = TrackFileTreeCount()
-        my_tqdm = tqdm(total=1, unit="file", disable=False)
+    if track_item is not None:
+        my_tftc = TrackFileTreeCount(track_item)
+        my_tqdm = tqdm(total=0, unit=track_item_unit, disable=False)
+        if track_initialize_total:
+            print("First counting {}s to process in directory: {}".format(
+                track_item_unit, srcdir
+            ))
+            my_tqdm.update(0)
+            exhaust(
+                _walk_simple(srcdir, 1, mindepth, maxdepth, list_function,
+                             my_tftc, my_tqdm, update_total_count=True)
+            )
+            item_count, item_est = my_tftc.get_item_count_estimate()
+            my_tqdm.close()
+            print("Now processing {}s in directory: {}".format(
+                track_item_unit, srcdir
+            ))
+            my_tqdm = tqdm(total=item_count, unit=track_item_unit, disable=False)
+            my_tftc = TrackFileTreeCount(
+                track_item,
+                initial_file_estimate=my_tftc.total_file_estimate,
+                initial_folder_estimate=my_tftc.total_folder_estimate,
+                track_estimates=False
+            )
+        my_tqdm.update(0)
     else:
         my_tftc = None
         my_tqdm = None
 
     if list_srcdname and mindepth == 0:
+        if my_tqdm is not None and track_item in (WALK_TRACK_DIRS, WALK_TRACK_BOTH):
+            my_tqdm.total += 1
+            my_tqdm.update(0)
         updir = os.path.dirname(srcdir)
         srcdname = os.path.basename(srcdir)
         yield updir, [srcdname], []
+        if my_tqdm is not None and track_item in (WALK_TRACK_DIRS, WALK_TRACK_BOTH):
+            my_tqdm.update(1)
 
-    for x in _walk_simple(srcdir, 1, mindepth, maxdepth, list_function, my_tftc, my_tqdm):
+    for x in _walk_simple(srcdir, 1, mindepth, maxdepth, list_function,
+                          my_tftc, my_tqdm, (not track_initialize_total)):
         yield x
 
+    if my_tqdm is not None:
+        my_tqdm.close()
 
-def _walk_simple(rootdir, depth, mindepth, maxdepth, list_function, my_tftc=None, my_tqdm=None):
+
+def _walk_simple(rootdir, depth, mindepth, maxdepth, list_function,
+                 my_tftc=None, my_tqdm=None, update_total_count=False):
     if depth > maxdepth:
         return
     dnames, fnames = [], []
@@ -247,74 +301,94 @@ def _walk_simple(rootdir, depth, mindepth, maxdepth, list_function, my_tftc=None
     if mindepth <= depth:
         yield rootdir, dnames, fnames
 
-    if my_tftc and my_tqdm:
-        my_tftc.add(depth, len(dnames), len(fnames) if mindepth <= depth else 0)
-        if len(dnames) == 0:
-            for i in range(depth+1, my_tftc.max_depth_found+1):
-                my_tftc.update_estimates(i)
-        file_count, file_est = my_tftc.get_file_count_estimate()
-        my_tqdm.total = int(file_est)
-        my_tqdm.update(len(fnames))
-
-    # print("rootdir {}, depth {}: {} folders, {} files".format(
-    #     rootdir, depth, len(dnames), len(fnames)
-    # ))
-    # folder_count, folder_est = my_tftc.get_folder_count_estimate()
-    # file_count, file_est = my_tftc.get_file_count_estimate()
-    # print("folders count, estimate: {}, {}  ::  {:.2%}".format(folder_count, folder_est, folder_count/folder_est))
-    # print("files count, estimate: {}, {}  ::  {:.2%}".format(file_count, file_est, file_count/file_est))
+    if my_tftc is not None and my_tqdm is not None:
+        added_count = my_tftc.add(depth, len(dnames), len(fnames) if mindepth <= depth else 0)
+        if update_total_count:
+            if len(dnames) == 0:
+                for i in range(depth+1, my_tftc.max_depth_found+1):
+                    my_tftc.update_estimates(i)
+            item_count, item_est = my_tftc.get_item_count_estimate()
+            my_tqdm.total = int(item_est)
+        my_tqdm.update(added_count)
 
     if depth < maxdepth:
         for dname in dnames:
-            for x in _walk_simple(os.path.join(rootdir, dname), depth+1, mindepth, maxdepth, list_function, my_tftc, my_tqdm):
+            for x in _walk_simple(os.path.join(rootdir, dname), depth+1, mindepth, maxdepth, list_function,
+                                  my_tftc, my_tqdm, update_total_count):
                 yield x
 
 
 class TrackFileTreeCount(object):
 
-    def __init__(self):
-        self.max_depth_found = 0
+    def __init__(self, report_item=None,
+                 initial_file_total=0,
+                 initial_folder_total=0,
+                 initial_file_estimate=0,
+                 initial_folder_estimate=0,
+                 track_estimates=True):
+        if report_item is not None and report_item not in WALK_TRACK_CHOICES:
+            raise cerr.InvalidArgumentError("`report_item` argument must be one of {}, "
+                                            "but was {}".format(WALK_TRACK_CHOICES, report_item))
+        self.report_item = report_item
+        self.track_estimates = track_estimates
 
-        self.nentries_at_depth = [1]
-        self.nfolders_at_depth = [1]
-        self.nfiles_at_depth = [0]
+        self.total_folder_count = initial_folder_total
+        self.total_file_count = initial_file_total
+        self.total_folder_estimate = initial_folder_estimate
+        self.total_file_estimate = initial_file_estimate
 
-        # self.nfolders_per_entry_at_depth = [[1]]
-        # self.nfiles_per_entry_at_depth = [[0]]
-        self.nfolders_estimate_at_depth = [1]
-        self.nfiles_estimate_at_depth = [0]
+        if track_estimates:
 
-        self.total_folder_count = 0
-        self.total_file_count = 0
-        self.total_folder_estimate = 0
-        self.total_file_estimate = 0
+            self.max_depth_found = 0
+
+            self.nentries_at_depth = [1]
+            self.nfolders_at_depth = [1]
+            self.nfiles_at_depth = [0]
+
+            # self.nfolders_per_entry_at_depth = [[1]]
+            # self.nfiles_per_entry_at_depth = [[0]]
+            self.nfolders_estimate_at_depth = [1]
+            self.nfiles_estimate_at_depth = [0]
 
     def add(self, depth, nfolders, nfiles):
-
-        added_depth = depth - self.max_depth_found
-        if added_depth > 0:
-            self.max_depth_found = depth
-
-            self.nentries_at_depth.extend([0]*added_depth)
-            self.nfolders_at_depth.extend([0]*added_depth)
-            self.nfiles_at_depth.extend([0]*added_depth)
-
-            # self.nfolders_per_entry_at_depth.extend([[]]*added_depth)
-            # self.nfiles_per_entry_at_depth.extend([[]]*added_depth)
-            self.nfolders_estimate_at_depth.extend([0]*added_depth)
-            self.nfiles_estimate_at_depth.extend([0]*added_depth)
-
-        self.nentries_at_depth[depth] += 1
-        self.nfolders_at_depth[depth] += nfolders
-        self.nfiles_at_depth[depth] += nfiles
-
-        # self.nfolders_per_entry_at_depth[depth].append(nfolders)
-        # self.nfiles_per_entry_at_depth[depth].append(nfiles)
 
         self.total_folder_count += nfolders
         self.total_file_count += nfiles
 
-        self.update_estimates(depth)
+        if self.track_estimates:
+
+            added_depth = depth - self.max_depth_found
+            if added_depth > 0:
+                self.max_depth_found = depth
+
+                self.nentries_at_depth.extend([0]*added_depth)
+                self.nfolders_at_depth.extend([0]*added_depth)
+                self.nfiles_at_depth.extend([0]*added_depth)
+
+                # self.nfolders_per_entry_at_depth.extend([[]]*added_depth)
+                # self.nfiles_per_entry_at_depth.extend([[]]*added_depth)
+                self.nfolders_estimate_at_depth.extend([0]*added_depth)
+                self.nfiles_estimate_at_depth.extend([0]*added_depth)
+
+            self.nentries_at_depth[depth] += 1
+            self.nfolders_at_depth[depth] += nfolders
+            self.nfiles_at_depth[depth] += nfiles
+
+            # self.nfolders_per_entry_at_depth[depth].append(nfolders)
+            # self.nfiles_per_entry_at_depth[depth].append(nfiles)
+
+            self.update_estimates(depth)
+
+        return_added_count = None
+        if self.report_item is not None:
+            if self.report_item == WALK_TRACK_FILES:
+                return_added_count = nfiles
+            elif self.report_item == WALK_TRACK_DIRS:
+                return_added_count = nfolders
+            elif self.report_item == WALK_TRACK_BOTH:
+                return_added_count = nfiles + nfolders
+
+        return return_added_count
 
     def update_estimates(self, depth):
         # self.total_folder_estimate += self._update_estimate(depth, self.nfolders_at_depth, self.nfolders_per_entry_at_depth, self.nfolders_estimate_at_depth)
@@ -352,6 +426,18 @@ class TrackFileTreeCount(object):
 
     def get_file_count_estimate(self):
         return self.total_file_count, self.total_file_estimate
+
+    def get_item_count_estimate(self):
+        if self.report_item == WALK_TRACK_FILES:
+            return self.get_file_count_estimate()
+        elif self.report_item == WALK_TRACK_DIRS:
+            return self.get_folder_count_estimate()
+        elif self.report_item == WALK_TRACK_BOTH:
+            file_count, file_est = self.get_file_count_estimate()
+            folder_count, folder_est = self.get_folder_count_estimate()
+            return file_count + folder_count, file_est + folder_est
+        else:
+            return None, None
 
 
 class WalkObject(object):
@@ -597,8 +683,8 @@ class WalkObject(object):
             return
 
         if imported_tqdm:
-            self.tftc = TrackFileTreeCount()
-            self.tqdm = tqdm(total=1, unit="file", disable=False)
+            self.tftc = TrackFileTreeCount(WALK_TRACK_FILES)
+            self.tqdm = tqdm(total=1, unit=WALK_TRACK_ITEM_UNIT_DICT[WALK_TRACK_FILES], disable=False)
 
         if self.copy_method_inst is not None and self.dstdir is not None and not os.path.isdir(self.dstdir):
             if not self.copy_method_inst.dryrun:
@@ -608,8 +694,9 @@ class WalkObject(object):
         for x in self._walk(self.srcdir, self.dstdir, depth, dmatch_depth):
             yield x
 
-        if imported_tqdm:
+        if self.tqdm is not None:
             self.tqdm.close()
+            self.tqdm = None
 
     def _walk(self, srcdir, dstdir, depth, dmatch_depth=-1):
         if depth > self.maxdepth and not (1 <= dmatch_depth <= self.dmatch_maxdepth):
@@ -719,13 +806,13 @@ class WalkObject(object):
             yield srcdir, dnames_yield, fnames_filtered
 
         if imported_tqdm:
-            self.tftc.add(depth, len(dnames_filtered), len(fnames_filtered) if depth >= self.mindepth else 0)
+            added_count = self.tftc.add(depth, len(dnames_filtered), len(fnames_filtered) if depth >= self.mindepth else 0)
             if len(dnames_filtered) == 0:
                 for i in range(depth+1, self.tftc.max_depth_found+1):
                     self.tftc.update_estimates(i)
-            file_count, file_est = self.tftc.get_file_count_estimate()
-            self.tqdm.total = int(file_est)
-            self.tqdm.update(len(fnames_filtered))
+            item_count, item_est = self.tftc.get_item_count_estimate()
+            self.tqdm.total = int(item_count)
+            self.tqdm.update(added_count)
 
         if dnames_filtered and (depth < self.maxdepth or dmatch_depth != -1):
             depth_next = depth + 1
@@ -874,17 +961,10 @@ def find(
         raise cerr.InvalidArgumentError("One and only one of (`vreturn`, `vyield`) arguments must be provided")
     if type(return_items[0]) in (tuple, list):
         return_items = list(return_items[0])
-    for i, item in enumerate(return_items):
-        if type(item) is str:
-            if item in FIND_RETURN_ITEMS_DICT:
-                item = FIND_RETURN_ITEMS_DICT[item]
-            else:
-                raise cerr.InvalidArgumentError("`vreturn`/`vyield` string arguments must be one of {}, "
-                                                "but was {}".format(list(FIND_RETURN_ITEMS_DICT.keys()), item))
-        if type(item) is int and item not in list(FIND_RETURN_ITEMS_DICT.values()):
-            raise cerr.InvalidArgumentError("`vreturn`/`vyield` int arguments must be one of {}, "
-                                            "but was {}".format(list(FIND_RETURN_ITEMS_DICT.values()), item))
-        return_items[i] = item
+    for item in return_items:
+        if item not in FIND_RETURN_CHOICES:
+            raise cerr.InvalidArgumentError("`vreturn`/`vyield` string arguments must be one of {}, "
+                                            "but argument was {}".format(FIND_RETURN_CHOICES, return_items))
     if 1 <= len(set(return_items)) <= 2:
         pass
     else:
