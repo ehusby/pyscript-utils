@@ -63,7 +63,6 @@ import psutils.scheduler as psu_sched
 ### Script imports ###
 
 ## Python Standard Library
-import logging
 
 ## Non-Standard PyPI
 try:

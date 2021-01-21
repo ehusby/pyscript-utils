@@ -416,6 +416,10 @@ def setup_logging(logger=None, logger_level=None, handler_level=0, log_format=No
     if logger_level is None:
         logger_level = logger.level
 
+    for file_path in [file_out, file_err]:
+        if file_path is not None:
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
     output_fh_items = []
     if add_stream_handlers and stream_out is not None:
         output_fh_items.append(stream_out)
