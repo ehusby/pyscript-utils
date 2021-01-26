@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Erik Husby; Polar Geospatial Center, University of Minnesota; 2020
+# Erik Husby; Polar Geospatial Center, University of Minnesota; 2021
 
 
 from __future__ import print_function
@@ -67,11 +67,13 @@ import psutils.scheduler as psu_sched
 ## Non-Standard PyPI
 try:
     from tqdm import tqdm
+    imported_tqdm = True
 except ImportError:
-    pass
+    imported_tqdm = False
 
 ## Non-PyPI
 import psutils.copymethod as psu_cm
+from psutils.func import identity
 
 ##############################
 
@@ -454,8 +456,8 @@ def perform_tasks(args, task_list):
             copy_debug=args.get(psu_act.ARGSTR_DEBUG)
         )
 
-    for task_srcpath, task_dstpath in tqdm(task_list):
-    # for task_srcpath, task_dstpath in task_list:
+    tqdm_func = tqdm if imported_tqdm else identity
+    for task_srcpath, task_dstpath in tqdm_func(task_list):
         if os.path.isfile(task_srcpath):
             task_srcfile = task_srcpath
             task_dstfile = task_dstpath

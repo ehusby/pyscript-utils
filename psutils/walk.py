@@ -694,9 +694,9 @@ class WalkObject(object):
         for x in self._walk(self.srcdir, self.dstdir, depth, dmatch_depth):
             yield x
 
-        if self.tqdm is not None:
-            self.tqdm.close()
-            self.tqdm = None
+        # if self.tqdm is not None:
+        #     self.tqdm.close()
+        #     self.tqdm = None
 
     def _walk(self, srcdir, dstdir, depth, dmatch_depth=-1):
         if depth > self.maxdepth and not (1 <= dmatch_depth <= self.dmatch_maxdepth):
