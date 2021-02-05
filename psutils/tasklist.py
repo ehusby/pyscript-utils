@@ -610,7 +610,7 @@ class Tasklist(object):
                     raise cerr.DimensionError("Inconsistent number of columns in `tasklist_file`: {}".format(tasklist_file))
 
 
-def parse_src_args(args, argstr_src, argstr_dst):
+def parse_src_args(args, argstr_src, argstr_dst, skip_dir_adjust=False):
     global SYNC_MODE_GLOBAL
     
     arg_dst = args.get(argstr_dst) if args.get(argstr_dst) is not None else args.get(ARGSTR_DSTDIR_GLOBAL)
@@ -810,7 +810,8 @@ def parse_src_args(args, argstr_src, argstr_dst):
 
     for src_path in src_list:
         dst_path = arg_dst
-        dst_path = adjust_dst_path(src_path, dst_path, arg_dst_can_be_file)
+        dst_path = adjust_dst_path(src_path, dst_path, arg_dst_can_be_file,
+                                   skip_dir_adjust=skip_dir_adjust)
         all_task_list.append((src_path, dst_path))
 
     for tasklist in srclist_tasklists:
@@ -864,12 +865,13 @@ def parse_src_args(args, argstr_src, argstr_dst):
                 for src_path_single in src_path_glob:
                     dst_path_single = adjust_dst_path(
                         src_path_single, dst_path, dst_can_be_file=False, dst_path_type=dst_path_type,
-                        sync_mode_default=ARGMOD_SYNC_MODE_TRANSPLANT_TREE
+                        sync_mode_default=ARGMOD_SYNC_MODE_TRANSPLANT_TREE, skip_dir_adjust=skip_dir_adjust
                     )
                     all_task_list.append((src_path_single, dst_path_single))
             else:
                 dst_path = adjust_dst_path(
-                    src_path, dst_path, tasklist_dst_can_be_file, dst_path_type
+                    src_path, dst_path, tasklist_dst_can_be_file, dst_path_type,
+                    skip_dir_adjust=skip_dir_adjust
                 )
                 all_task_list.append((src_path, dst_path))
 
@@ -951,13 +953,13 @@ def parse_src_args(args, argstr_src, argstr_dst):
 
 
 def adjust_dst_path(src_path, dst_path, dst_can_be_file=False, dst_path_type=PATH_TYPE_UNKNOWN,
-                    sync_mode_default=ARGMOD_SYNC_MODE_NULL):
+                    sync_mode_default=ARGMOD_SYNC_MODE_NULL, skip_dir_adjust=False):
     # global SYNC_MODE_GLOBAL
 
     if dst_path_type == PATH_TYPE_DIR or (dst_path_type == PATH_TYPE_UNKNOWN and os.path.isdir(dst_path)):
         if os.path.isfile(src_path):
             dst_path = os.path.join(dst_path, os.path.basename(src_path))
-        else:
+        elif not skip_dir_adjust:
             # src_path is a directory
             sync_mode = SYNC_MODE_GLOBAL if SYNC_MODE_GLOBAL != ARGMOD_SYNC_MODE_NULL else sync_mode_default
             if sync_mode == ARGMOD_SYNC_MODE_NULL:
@@ -984,7 +986,7 @@ def adjust_dst_path(src_path, dst_path, dst_can_be_file=False, dst_path_type=PAT
                 pass
             else:
                 dst_path = os.path.join(dst_path, os.path.basename(src_path))
-        else:
+        elif not skip_dir_adjust:
             # src_path is a directory; dst_path will be a new destination directory
             sync_mode = SYNC_MODE_GLOBAL if SYNC_MODE_GLOBAL != ARGMOD_SYNC_MODE_NULL else sync_mode_default
             if sync_mode == ARGMOD_SYNC_MODE_NULL:

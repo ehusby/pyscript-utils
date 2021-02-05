@@ -7,6 +7,7 @@ import sys
 import psutils.argtype as psu_at
 
 
+# https://stackoverflow.com/a/35804945/8896374
 def addLoggingLevel(levelName, levelNum, methodName=None):
     """
     Comprehensively adds a new logging level to the `logging` module and the
@@ -107,10 +108,9 @@ ARGGRP_OUTDIR = [
 ARGCOL_MUT_EXCL_SET = [
     [ARGSTR_LOG_APPEND, ARGSTR_LOG_OVERWRITE],
 ]
-# ARGCOL_MUT_EXCL_PROVIDED = [
-#     [ARGSTR_LOG_APPEND, ARGSTR_LOG_OVERWRITE, ARGSTR_LOG_MODE],
-# ]
-ARGCOL_MUT_EXCL_PROVIDED = []
+ARGCOL_MUT_EXCL_PROVIDED = [
+    [ARGSTR_LOG_APPEND, ARGSTR_LOG_OVERWRITE, ARGSTR_LOG_MODE],
+]
 
 ## Argument choices (declare "ARGCHO_{ARGSTR}_{option}" options followed by list of all options as "ARGCHO_{ARGSTR}")
 ARGCHO_LOG_LEVEL_TRACE = 'TRACE'

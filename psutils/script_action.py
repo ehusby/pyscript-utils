@@ -30,6 +30,11 @@ ARGSTR_QUIET = '--quiet'
 ARGSTR_DEBUG = '--debug'
 ARGSTR_DRYRUN = '--dryrun'
 
+## Argument collections ("ARGCOL_" lists of "ARGGRP_" argument strings)
+ARGCOL_MUT_EXCL_SET = [
+    [ARGSTR_QUIET, [ARGSTR_DEBUG, ARGSTR_DRYRUN]],
+]
+
 ##############################
 
 
@@ -188,16 +193,30 @@ def flatten_nargs_plus_action_append_lists(args, *argstrs):
 
 def check_mutually_exclusive_args(args, argcol_mut_excl_set, argcol_mut_excl_provided):
 
+    def arggrp_contains_at_least_n_set_args(arggrp, n, check_provided=False):
+        check_list = []
+        for argstr in arggrp:
+            argstr_type = type(argstr)
+            if argstr_type is not str:
+                sub_arggrp = argstr
+                check_val = arggrp_contains_at_least_n_set_args(sub_arggrp, 1, check_provided)
+            elif check_provided:
+                check_val = args.provided(argstr)
+            else:
+                argval = args.get(argstr)
+                check_val = (argval is True) if type(argval) is bool else (argval is not None)
+            check_list.append(check_val)
+        return check_list.count(True) >= n
+
     for arggrp in argcol_mut_excl_set:
-        if [args.get(argstr) is True if type(args.get(argstr)) is bool else
-            args.get(argstr) is not None for argstr in arggrp].count(True) > 1:
+        if arggrp_contains_at_least_n_set_args(arggrp, 2):
             args.parser.error("{} arguments are mutually exclusive{}".format(
                 "{} and {}".format(*arggrp) if len(arggrp) == 2 else "The following",
                 '' if len(arggrp) == 2 else ": {}".format(arggrp)
             ))
 
     for arggrp in argcol_mut_excl_provided:
-        if [args.provided(argstr) for argstr in arggrp].count(True) > 1:
+        if arggrp_contains_at_least_n_set_args(arggrp, 2, check_provided=True):
             args.parser.error("{} arguments are mutually exclusive{}".format(
                 "{} and {}".format(*arggrp) if len(arggrp) == 2 else "The following",
                 '' if len(arggrp) == 2 else ": {}".format(arggrp)

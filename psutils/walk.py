@@ -29,6 +29,7 @@ from psutils.func import exhaust
 ARGSTR_MINDEPTH = '--mindepth'
 ARGSTR_MAXDEPTH = '--maxdepth'
 ARGSTR_DMATCH_MAXDEPTH = '--dmatch-maxdepth'
+ARGSTR_OUTDEPTH = '--outdepth'
 ARGSTR_FMATCH = '--fmatch'
 ARGSTR_FMATCH_RE = '--fmatch-re'
 ARGSTR_FEXCL = '--fexcl'
@@ -50,6 +51,7 @@ ARGGRP_FILEMATCH = [
 ARGDEF_MINDEPTH = 0
 ARGDEF_MAXDEPTH = psu_at.ARGNUM_POS_INF
 ARGDEF_DMATCH_MAXDEPTH = psu_at.ARGNUM_POS_INF
+ARGDEF_OUTDEPTH = None
 
 ##############################
 
@@ -93,11 +95,12 @@ FIND_RETURN_CHOICES = [
 def add_walk_arguments(parser,
                        mindepth=ARGDEF_MINDEPTH,
                        maxdepth=ARGDEF_MAXDEPTH,
-                       dmatch_maxdepth=ARGDEF_DMATCH_MAXDEPTH):
+                       dmatch_maxdepth=ARGDEF_DMATCH_MAXDEPTH,
+                       outdepth=ARGDEF_OUTDEPTH):
     parser.add_argument(
         '-d0', ARGSTR_MINDEPTH,
         type=psu_at.ARGTYPE_NUM(argstr=ARGSTR_MINDEPTH,
-            numeric_type=int, allow_neg=False, allow_zero=True, allow_inf=True),
+            numeric_type=int, allow_neg=False, allow_zero=True, allow_inf=False),
         default=mindepth,
         help=' '.join([
             "Minimum depth of recursive search into source directories for files to copy.",
@@ -119,6 +122,15 @@ def add_walk_arguments(parser,
         type=psu_at.ARGTYPE_NUM(argstr=ARGSTR_DMATCH_MAXDEPTH,
             numeric_type=int, allow_neg=False, allow_zero=True, allow_inf=True),
         default=dmatch_maxdepth,
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+    parser.add_argument(
+        ARGSTR_OUTDEPTH,
+        type=psu_at.ARGTYPE_NUM(argstr=ARGSTR_OUTDEPTH,
+            numeric_type=int, allow_neg=False, allow_zero=True, allow_inf=False),
+        default=outdepth,
         help=' '.join([
             "[write me]",
         ])
@@ -442,12 +454,13 @@ class TrackFileTreeCount(object):
 
 class WalkObject(object):
     def __init__(self,
-        mindepth=0, maxdepth=float('inf'), dmatch_maxdepth=None,
+        mindepth=None, maxdepth=float('inf'), outdepth=None, dmatch_maxdepth=None,
         fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
         dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
         fsub=None, dsub=None,
-        copy_method=None, copy_overwrite_files=False, copy_overwrite_dirs=False, copy_overwrite_dmatch=False, transplant_tree=False, collapse_tree=False,
-        copy_dryrun=False, copy_quiet=False, copy_debug=False,
+        copy_method=None, copy_overwrite_files=None, copy_overwrite_dirs=None, copy_overwrite_dmatch=None,
+        sync_tree=False, transplant_tree=False, collapse_tree=False,
+        copy_dryrun=None, copy_quiet=None, copy_debug=None,
         allow_dir_op=None,
         mkdir_upon_file_copy=False,
         allow_nonstd_shprogs=False,
@@ -457,8 +470,14 @@ class WalkObject(object):
         resub_function=None,
         rematch_partial=False
     ):
-        if mindepth < 0 or maxdepth < 0 or (dmatch_maxdepth is not None and dmatch_maxdepth < 0):
+        if any([depth < 0 for depth in [mindepth, maxdepth, outdepth, dmatch_maxdepth] if depth is not None]):
             raise cerr.InvalidArgumentError("depth arguments must be >= 0")
+        if outdepth is not None:
+            if mindepth is not None and outdepth > mindepth:
+                raise cerr.InvalidArgumentError("`outdepth` valid range: 0 <= `outdepth` <= `mindepth`")
+            if sync_tree or transplant_tree:
+                raise cerr.InvalidArgumentError("`outdepth` and (`sync_tree` or `transplant_tree`) "
+                                                "arguments are incompatible")
         if copy_method and copy_shcmd_fmtstr:
             raise cerr.InvalidArgumentError("`copy_method` and `copy_shcmd_fmtstr` arguments are mutually exclusive")
         if copy_shcmd_fmtstr is not None:
@@ -470,6 +489,20 @@ class WalkObject(object):
             raise cerr.InvalidArgumentError("`copy_quiet` and `copy_dryrun` arguments are mutually exclusive")
         if list_function is not None and list_function not in WALK_LIST_FUNCTION_AVAIL:
             raise cerr.InvalidArgumentError("`list_function` must be either os.listdir or os.scandir")
+
+        if mindepth is None:
+            if outdepth is not None:
+                mindepth = outdepth
+            else:
+                mindepth = 0
+
+        if outdepth is None:
+            if sync_tree or mindepth == 0:
+                outdepth = 1
+            elif transplant_tree:
+                outdepth = 0
+            else:
+                outdepth = mindepth
 
         if dmatch_maxdepth is None:
             dmatch_maxdepth = float('inf') if copy_method is not None else -1
@@ -585,17 +618,21 @@ class WalkObject(object):
                 copy_overwrite_files=copy_overwrite_files,
                 copy_overwrite_dirs=copy_overwrite_dirs,
                 copy_dryrun=copy_dryrun,
-                copy_verbose=(not copy_quiet),
+                copy_verbose=(None if copy_quiet is None else (not copy_quiet)),
                 copy_debug=copy_debug
             )
 
         if allow_dir_op is None and copy_method.action_verb.upper() in ('SYMLINKING', 'MOVING'):
             allow_dir_op = True
+        if copy_overwrite_dmatch is None:
+            copy_overwrite_dmatch = False
 
         self.srcdir = None
         self.dstdir = None
         self.mindepth = mindepth
         self.maxdepth = maxdepth
+        self.outdepth = outdepth
+        self.outdepth_inst = outdepth
         self.dmatch_maxdepth = dmatch_maxdepth
         self.fname_rematch = fname_rematch
         self.fname_reexcl = fname_reexcl
@@ -605,7 +642,6 @@ class WalkObject(object):
         self.dname_resub = dname_resub
         self.copy_method = copy_method
         self.copy_method_inst = None if copy_method is None else copy.copy(self.copy_method)
-        self.transplant_tree = transplant_tree
         self.collapse_tree = collapse_tree
         self.collapse_tree_inst = collapse_tree
         self.allow_dir_op = allow_dir_op
@@ -619,19 +655,25 @@ class WalkObject(object):
 
     def walk(self,
              srcdir, dstdir=None,
-             copy_overwrite_files=None, copy_overwrite_dirs=None, transplant_tree=None, collapse_tree=None,
+             copy_overwrite_files=None, copy_overwrite_dirs=None,
+             sync_tree=False, transplant_tree=False, collapse_tree=None,
              copy_dryrun=None, copy_quiet=None, copy_debug=None):
-        if transplant_tree is None:
-            transplant_tree = self.transplant_tree
         if collapse_tree is None:
             collapse_tree = self.collapse_tree
+
+        if sync_tree:
+            self.outdepth_inst = 1
+        elif transplant_tree:
+            self.outdepth_inst = 0
+        else:
+            self.outdepth_inst = self.outdepth
 
         srcdir = os.path.normpath(os.path.expanduser(srcdir))
         if not os.path.isdir(srcdir):
             raise cerr.InvalidArgumentError("`srcdir` directory does not exist: {}".format(srcdir))
         if dstdir is not None:
             dstdir = os.path.normpath(os.path.expanduser(dstdir))
-        if transplant_tree:
+        if self.outdepth_inst == 0:
             dstdir = os.path.join(dstdir, os.path.basename(srcdir))
 
         self.srcdir = srcdir
@@ -673,7 +715,7 @@ class WalkObject(object):
             if srcdname_match:
                 dmatch_depth = 1
 
-        if self.allow_dir_op and dmatch_depth != 0 and (self.mindepth <= depth <= self.maxdepth):
+        if self.allow_dir_op and dmatch_depth != 0 and (self.mindepth <= depth <= self.maxdepth) and self.outdepth_inst in (-1, 0):
             if not self.copy_method_inst.dryrun:
                 os.makedirs(os.path.dirname(os.path.abspath(self.dstdir)), exist_ok=True)
             copy_success = self.copy_method_inst.copy(
@@ -841,6 +883,9 @@ class WalkObject(object):
                 if dstdir is None:
                     dstdir_next = None
                 elif self.collapse_tree_inst:
+                    # TODO: Make sure this is appropriate "collapse tree" behavior
+                    dstdir_next = dstdir
+                elif depth < self.outdepth_inst:
                     dstdir_next = dstdir
                 else:
                     dstdname_next = dn
@@ -861,12 +906,13 @@ class WalkObject(object):
 
 def _walk(
     srcdir, dstdir=None, list_srcdname=False,
-    mindepth=0, maxdepth=float('inf'), dmatch_maxdepth=None,
+    mindepth=None, maxdepth=float('inf'), outdepth=None, dmatch_maxdepth=None,
     fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
     dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
     fsub=None, dsub=None,
-    copy_method=None, copy_overwrite_files=False, copy_overwrite_dirs=False, copy_overwrite_dmatch=False, transplant_tree=False, collapse_tree=False,
-    copy_dryrun=False, copy_quiet=False, copy_debug=False,
+    copy_method=None, copy_overwrite_files=None, copy_overwrite_dirs=None, copy_overwrite_dmatch=None,
+    sync_tree=False, transplant_tree=False, collapse_tree=False,
+    copy_dryrun=None, copy_quiet=None, copy_debug=None,
     allow_dir_op=None,
     mkdir_upon_file_copy=False,
     allow_nonstd_shprogs=False,
@@ -883,11 +929,12 @@ def _walk(
     if dstdir is None and (copy_method or copy_quiet or copy_dryrun or copy_shcmd_fmtstr):
         raise cerr.InvalidArgumentError("`dstdir` must be provided to use file copy options")
     walk_object = WalkObject(
-        mindepth, maxdepth, dmatch_maxdepth,
+        mindepth, maxdepth, outdepth, dmatch_maxdepth,
         fmatch, fmatch_re, fexcl, fexcl_re,
         dmatch, dmatch_re, dexcl, dexcl_re,
         fsub, dsub,
-        copy_method, copy_overwrite_files, copy_overwrite_dirs, copy_overwrite_dmatch, transplant_tree, collapse_tree,
+        copy_method, copy_overwrite_files, copy_overwrite_dirs, copy_overwrite_dmatch,
+        sync_tree, transplant_tree, collapse_tree,
         copy_dryrun, copy_quiet, copy_debug,
         allow_dir_op,
         mkdir_upon_file_copy,
@@ -902,13 +949,13 @@ def _walk(
         updir = os.path.dirname(srcdir)
         srcdname = os.path.basename(srcdir)
         yield updir, [srcdname], []
-    for x in walk_object.walk(srcdir, dstdir, copy_overwrite_files, copy_overwrite_dirs, transplant_tree, collapse_tree):
+    for x in walk_object.walk(srcdir, dstdir):
         yield x
 
 
 def walk(
     srcdir, dstdir=None, list_srcdname=False,
-    mindepth=0, maxdepth=float('inf'), dmatch_maxdepth=None,
+    mindepth=None, maxdepth=float('inf'), outdepth=None, dmatch_maxdepth=None,
     fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
     dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
     list_function=None,
@@ -917,7 +964,7 @@ def walk(
 ):
     for x in _walk(
         srcdir, dstdir, list_srcdname,
-        mindepth, maxdepth, dmatch_maxdepth,
+        mindepth, maxdepth, outdepth, dmatch_maxdepth,
         fmatch, fmatch_re, fexcl, fexcl_re,
         dmatch, dmatch_re, dexcl, dexcl_re,
         list_function=list_function,
@@ -929,12 +976,13 @@ def walk(
 def find(
     srcdir, dstdir=None, list_srcdname=False,
     vreturn=None, vyield=None, print_findings=False,
-    mindepth=0, maxdepth=float('inf'), dmatch_maxdepth=None,
+    mindepth=None, maxdepth=float('inf'), outdepth=None, dmatch_maxdepth=None,
     fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
     dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
     fsub=None, dsub=None,
-    copy_method=None, copy_overwrite_files=False, copy_overwrite_dirs=False, transplant_tree=False, collapse_tree=False,
-    copy_dryrun=False, copy_quiet=False, copy_debug=False,
+    copy_method=None, copy_overwrite_files=None, copy_overwrite_dirs=None, copy_overwrite_dmatch=None,
+    sync_tree=False, transplant_tree=False, collapse_tree=False,
+    copy_dryrun=None, copy_quiet=None, copy_debug=None,
     allow_dir_op=None,
     mkdir_upon_file_copy=False,
     allow_nonstd_shprogs=False,
@@ -979,11 +1027,12 @@ def find(
     def _find_iter():
         for rootdir, dnames, fnames in _walk(
             srcdir, dstdir, list_srcdname,
-            mindepth, maxdepth, dmatch_maxdepth,
+            mindepth, maxdepth, outdepth, dmatch_maxdepth,
             fmatch, fmatch_re, fexcl, fexcl_re,
             dmatch, dmatch_re, dexcl, dexcl_re,
             fsub, dsub,
-            copy_method, copy_overwrite_files, copy_overwrite_dirs, transplant_tree, collapse_tree,
+            copy_method, copy_overwrite_files, copy_overwrite_dirs, copy_overwrite_dmatch,
+            sync_tree, transplant_tree, collapse_tree,
             copy_dryrun, copy_quiet, copy_debug,
             allow_dir_op,
             mkdir_upon_file_copy,
@@ -1053,8 +1102,9 @@ def find(
 
 def copy_tree(
     srcdir, dstdir, copy_method='copy',
-    overwrite=False, transplant_tree=False, collapse_tree=False,
-    mindepth=0, maxdepth=float('inf'), dmatch_maxdepth=None,
+    sync_tree=False, transplant_tree=False, collapse_tree=False,
+    overwrite_files=False, overwrite_dirs=False, overwrite_dmatch=False,
+    mindepth=None, maxdepth=float('inf'), dmatch_maxdepth=None,
     fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
     dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
     fsub=None, dsub=None,
@@ -1080,7 +1130,8 @@ def copy_tree(
         fmatch, fmatch_re, fexcl, fexcl_re,
         dmatch, dmatch_re, dexcl, dexcl_re,
         fsub, dsub,
-        copy_method, overwrite, transplant_tree, collapse_tree,
+        copy_method, overwrite_files, overwrite_dirs, overwrite_dmatch,
+        sync_tree, transplant_tree, collapse_tree,
         dryrun, quiet, debug,
         allow_dir_op,
         mkdir_upon_file_copy,

@@ -110,14 +110,13 @@ ARGGRP_OUTDIR += psu_log.ARGGRP_OUTDIR  # comment-out if not using logging argum
 ARGGRP_OUTDIR += psu_sched.ARGGRP_OUTDIR  # comment-out if not using scheduler arguments
 
 ## Argument collections ("ARGCOL_" lists of "ARGGRP_" argument strings)
-ARGCOL_MUT_EXCL_SET = []
-ARGCOL_MUT_EXCL_SET += psu_log.ARGCOL_MUT_EXCL_SET  # comment-out if not using logging arguments
-ARGCOL_MUT_EXCL_SET += [
+ARGCOL_MUT_EXCL_SET = [
     ARGGRP_DST,
-    psu_tl.ARGGRP_SYNC_MODE,
-    [psu_act.ARGSTR_QUIET, psu_act.ARGSTR_DEBUG],
-    [psu_act.ARGSTR_QUIET, psu_act.ARGSTR_DRYRUN],
+    [psu_walk.ARGSTR_OUTDEPTH, [psu_tl.ARGSTR_SYNC_TREE, psu_tl.ARGSTR_TRANSPLANT_TREE]],
 ]
+ARGCOL_MUT_EXCL_SET += psu_log.ARGCOL_MUT_EXCL_SET  # comment-out if not using logging arguments
+ARGCOL_MUT_EXCL_SET += psu_tl.ARGCOL_MUT_EXCL_SET  # comment-out if not using source list arguments
+ARGCOL_MUT_EXCL_SET += psu_act.ARGCOL_MUT_EXCL_SET  # comment-out if not using dryrun, debug, quiet arguments
 ARGCOL_MUT_EXCL_PROVIDED = list(ARGCOL_MUT_EXCL_SET)
 ARGCOL_MUT_EXCL_PROVIDED += psu_log.ARGCOL_MUT_EXCL_PROVIDED  # comment-out if not using logging arguments
 
@@ -168,6 +167,7 @@ ARGDEF_COPY_METHOD = psu_cm.ARGCHO_COPY_METHOD_LINK
 ARGDEF_MINDEPTH = 0
 ARGDEF_MAXDEPTH = psu_at.ARGNUM_POS_INF
 ARGDEF_DMATCH_MAXDEPTH = psu_at.ARGNUM_POS_INF
+ARGDEF_OUTDEPTH = None
 ARGDEF_SRCLIST_DELIM = ','
 ARGDEF_BUNDLEDIR = os.path.realpath(os.path.join(os.path.expanduser('~'), 'scratch', 'task_bundles'))
 ARGDEF_HARDLINK_RECORD_DIR = os.path.realpath(os.path.join(os.path.expanduser('~'), 'scratch', '{}_hardlink_records'.format(SCRIPT_NAME)))
@@ -238,6 +238,14 @@ def argparser_init():
         ])
     )
 
+    if not skip_dst_path_check:
+        argtype_dst = psu_at.ARGTYPE_PATH(argstr=ARGSTR_DST_POS,
+            accesscheck_reqtrue=os.W_OK,
+            accesscheck_parent_if_dne=True,
+            append_prefix=dst_prefix,
+            append_suffix=dst_suffix,)
+    else:
+        argtype_dst = str
     parser.add_argument(
         ARGSTR_DST_POS,
         type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_DST_POS,
@@ -285,7 +293,8 @@ def argparser_init():
     psu_walk.add_walk_arguments(parser,
         ARGDEF_MINDEPTH,
         ARGDEF_MAXDEPTH,
-        ARGDEF_DMATCH_MAXDEPTH
+        ARGDEF_DMATCH_MAXDEPTH,
+        ARGDEF_OUTDEPTH
     )
 
     parser.add_argument(
@@ -359,6 +368,10 @@ def main():
     ## Restructure provided source arguments into flat lists
     psu_act.flatten_nargs_plus_action_append_lists(args, ARGGRP_SRC, psu_walk.ARGGRP_FILEMATCH)
 
+    # If --outdepth is provided and --mindepth isn't provided, set mindepth to outdepth
+    if args.provided(psu_walk.ARGSTR_OUTDEPTH) and not args.provided(psu_walk.ARGSTR_MINDEPTH):
+        args.set(psu_walk.ARGSTR_MINDEPTH, args.get(psu_walk.ARGSTR_OUTDEPTH))
+
     ## Print script preamble when done adjusting argument values
     script_preamble = psu_act.get_preamble(args, sys.argv)
     if args.get(psu_act.ARGSTR_DEBUG):
@@ -370,8 +383,19 @@ def main():
     ## Validate argument values
     psu_act.check_mutually_exclusive_args(args, ARGCOL_MUT_EXCL_SET, ARGCOL_MUT_EXCL_PROVIDED)
 
+    # Verify mindepth and outdepth settings
+    if (    args.get(psu_walk.ARGSTR_OUTDEPTH) is not None
+        and args.get(psu_walk.ARGSTR_OUTDEPTH) > args.get(psu_walk.ARGSTR_MINDEPTH)):
+        arg_parser.error("{} ({}) cannot be greater than {} ({})".format(
+            psu_walk.ARGSTR_OUTDEPTH, args.get(psu_walk.ARGSTR_OUTDEPTH),
+            psu_walk.ARGSTR_MINDEPTH, args.get(psu_walk.ARGSTR_MINDEPTH),
+        ))
+
     ## Parse src-dst tasklist arguments
-    all_task_list = psu_tl.parse_src_args(args, ARGSTR_SRC, ARGSTR_DST)
+    skip_dstdir_path_adjustment = (    args.provided(psu_walk.ARGSTR_OUTDEPTH)
+                                   or (args.provided(psu_walk.ARGSTR_MINDEPTH) and args.get(psu_walk.ARGSTR_MINDEPTH) > 0))
+    all_task_list = psu_tl.parse_src_args(args, ARGSTR_SRC, ARGSTR_DST,
+                                          skip_dir_adjust=skip_dstdir_path_adjustment)
 
 
     ### Create output directories if they don't already exist
@@ -431,7 +455,8 @@ def perform_tasks(args, task_list):
     )
 
     walk_object = psu_walk.WalkObject(
-        mindepth=args.get(psu_walk.ARGSTR_MINDEPTH), maxdepth=args.get(psu_walk.ARGSTR_MAXDEPTH), dmatch_maxdepth=args.get(psu_walk.ARGSTR_DMATCH_MAXDEPTH),
+        mindepth=args.get(psu_walk.ARGSTR_MINDEPTH), maxdepth=args.get(psu_walk.ARGSTR_MAXDEPTH),
+        outdepth=args.get(psu_walk.ARGSTR_OUTDEPTH), dmatch_maxdepth=args.get(psu_walk.ARGSTR_DMATCH_MAXDEPTH),
         fmatch=args.get(psu_walk.ARGSTR_FMATCH), fmatch_re=args.get(psu_walk.ARGSTR_FMATCH_RE),
         fexcl=args.get(psu_walk.ARGSTR_FEXCL), fexcl_re=args.get(psu_walk.ARGSTR_FEXCL_RE),
         dmatch=args.get(psu_walk.ARGSTR_DMATCH), dmatch_re=args.get(psu_walk.ARGSTR_DMATCH_RE),
@@ -439,7 +464,7 @@ def perform_tasks(args, task_list):
         fsub=args.get(psu_walk.ARGSTR_FSUB_RE), dsub=args.get(psu_walk.ARGSTR_DSUB_RE),
         copy_method=copy_method_obj, copy_overwrite_files=args.get(psu_cm.ARGSTR_OVERWRITE_FILES), copy_overwrite_dirs=args.get(psu_cm.ARGSTR_OVERWRITE_DIRS), copy_overwrite_dmatch=args.get(psu_cm.ARGSTR_OVERWRITE_DMATCH),
         allow_dir_op=(False if args.get(psu_cm.ARGSTR_SYMLINK_FILES) else None), mkdir_upon_file_copy=args.get(psu_cm.ARGSTR_MKDIR_UPON_FILE_COPY),
-        transplant_tree=False, collapse_tree=args.get(psu_tl.ARGSTR_COLLAPSE_TREE),
+        sync_tree=args.get(psu_tl.ARGSTR_SYNC_TREE), transplant_tree=args.get(psu_tl.ARGSTR_TRANSPLANT_TREE), collapse_tree=args.get(psu_tl.ARGSTR_COLLAPSE_TREE),
         copy_dryrun=args.get(psu_act.ARGSTR_DRYRUN), copy_quiet=args.get(psu_act.ARGSTR_QUIET), copy_debug=args.get(psu_act.ARGSTR_DEBUG),
     )
 
