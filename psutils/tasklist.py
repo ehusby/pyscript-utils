@@ -19,7 +19,7 @@ from psutils.print_methods import *
 
 ## Argument strings ("ARGSTR_")
 ARGSTR_DSTDIR_GLOBAL = '--dstdir-global'
-ARGSTR_ARGLIST = '--arglist'
+ARGSTR_TASKLIST = '--tasklist'
 ARGSTR_SRCLIST = '--srclist'
 ARGSTR_SRCLIST_ROOTED = '--srclist-rooted'
 ARGSTR_SRCLIST_PREFIX = '--srclist-prefix'
@@ -41,6 +41,11 @@ ARGHLP_SRCLIST_ROOTED_FORMAT = None  # set globally in pre_argparse()
 ARGGRP_SRC = [ARGSTR_SRCLIST, ARGSTR_SRCLIST_ROOTED]
 ARGGRP_DST = [ARGSTR_DSTDIR_GLOBAL]
 ARGGRP_SYNC_MODE = [ARGSTR_SYNC_TREE, ARGSTR_TRANSPLANT_TREE]
+
+## Argument collections ("ARGCOL_" lists of "ARGGRP_" argument strings)
+ARGCOL_MUT_EXCL_SET = [
+    ARGGRP_SYNC_MODE
+]
 
 ## Argument modes ("ARGMOD_", used for mutually exclusive arguments that control the same mechanic)
 # (It's generally better to use a single argument with multiple choices, but sometimes we want
@@ -111,8 +116,8 @@ def add_srclist_arguments(parser,
     )
 
     parser.add_argument(
-        '-al', ARGSTR_ARGLIST,
-        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_ARGLIST,
+        '-tl', ARGSTR_TASKLIST,
+        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_TASKLIST,
             existcheck_fn=os.path.isfile,
             existcheck_reqval=True,
             accesscheck_reqtrue=os.R_OK),

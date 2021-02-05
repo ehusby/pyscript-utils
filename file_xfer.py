@@ -188,8 +188,8 @@ ARGDEF_LOG_MODE = psu_log.ARGCHO_LOG_MODE_APPEND
 ### Scheduler settings ###
 
 BUNDLE_TASK_ARGSTRS = [ARGSTR_SRC, ARGSTR_DST]
-BUNDLE_LIST_ARGSTR = psu_tl.ARGSTR_ARGLIST
-BUNDLE_LIST_DESCR = 'srclist'
+BUNDLE_LIST_ARGSTR = psu_tl.ARGSTR_TASKLIST
+BUNDLE_LIST_DESCR = 'tasklist'
 
 ##############################
 
