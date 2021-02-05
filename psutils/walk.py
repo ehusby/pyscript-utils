@@ -684,12 +684,10 @@ class WalkObject(object):
         else:
             self.copy_method_inst = copy.copy(self.copy_method)
             self.copy_method_inst.set_options(
-                check_srcpath_exists=False,
-                copy_makedirs=False,
                 copy_overwrite_files=copy_overwrite_files,
                 copy_overwrite_dirs=copy_overwrite_dirs,
                 copy_dryrun=copy_dryrun,
-                copy_verbose=(copy_quiet if copy_quiet is None else not copy_quiet),
+                copy_verbose=(None if copy_quiet is None else (not copy_quiet)),
                 copy_debug=copy_debug
             )
 
@@ -717,7 +715,7 @@ class WalkObject(object):
 
         if self.allow_dir_op and dmatch_depth != 0 and (self.mindepth <= depth <= self.maxdepth) and self.outdepth_inst in (-1, 0):
             if not self.copy_method_inst.dryrun:
-                os.makedirs(os.path.dirname(os.path.abspath(self.dstdir)), exist_ok=True)
+                os.makedirs(os.path.dirname(os.path.normpath(self.dstdir)), exist_ok=True)
             copy_success = self.copy_method_inst.copy(
                 self.srcdir, self.dstdir,
                 overwrite_dir=(self.copy_method_inst.copy_overwrite_dirs or (self.copy_overwrite_dmatch and dmatch_depth == 1))
@@ -895,6 +893,8 @@ class WalkObject(object):
                     dstdir_next = os.path.join(dstdir, dstdname_next)
 
                 if self.allow_dir_op and srcdir_next_passes and depth >= self.mindepth:
+                    if not self.copy_method_inst.dryrun:
+                        os.makedirs(os.path.dirname(os.path.normpath(dstdir_next)), exist_ok=True)
                     copy_success = self.copy_method_inst.copy(
                         srcdir_next, dstdir_next,
                         overwrite_dir=(self.copy_method.copy_overwrite_dirs or self.copy_overwrite_dmatch)

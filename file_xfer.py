@@ -445,8 +445,6 @@ def perform_tasks(args, task_list):
 
     copy_method_obj = copy.copy(psu_cm.ARGMAP_COPY_METHOD_FUNC[args.get(psu_cm.ARGSTR_COPY_METHOD)])
     copy_method_obj.set_options(
-        check_srcpath_exists=True,
-        copy_makedirs=True,
         copy_overwrite_files=args.get(psu_cm.ARGSTR_OVERWRITE_FILES),
         copy_overwrite_dirs=args.get(psu_cm.ARGSTR_OVERWRITE_DIRS),
         copy_dryrun=args.get(psu_act.ARGSTR_DRYRUN),
@@ -473,7 +471,6 @@ def perform_tasks(args, task_list):
         hardlink_record_dir = args.get(ARGSTR_HARDLINK_RECORDS_DIR)
         copy_method_obj_symlink_record = copy.copy(psu_cm.ARGMAP_COPY_METHOD_FUNC[psu_cm.ARGCHO_COPY_METHOD_SYMLINK])
         copy_method_obj_symlink_record.set_options(
-            copy_makedirs=True,
             copy_overwrite_files=True,
             copy_overwrite_dirs=True,
             copy_dryrun=args.get(psu_act.ARGSTR_DRYRUN),
