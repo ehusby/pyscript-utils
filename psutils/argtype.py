@@ -32,12 +32,17 @@ ARGTYPE_BOOL_PLUS = functools.partial(functools.partial, argtype_bool_plus)
 
 
 def argtype_path_handler(path, argstr,
+                         append_prefix=None, append_suffix=None,
                          abspath_fn=os.path.realpath,
                          preserve_trailing_separator=True,
                          existcheck_fn=None, existcheck_reqval=None,
                          accesscheck_reqtrue=None, accesscheck_reqfalse=None,
                          accesscheck_parent_if_dne=False):
 
+    if append_prefix is not None:
+        path = append_prefix + path
+    if append_suffix is not None:
+        path = path + append_suffix
     path = os.path.expanduser(path)
 
     existcheck_fn_desc_dict = {
@@ -72,7 +77,7 @@ def argtype_path_handler(path, argstr,
                              " appear in both required True and False lists: {}".format(modes_overlap))
     if existcheck_fn is not None and existcheck_fn(path) != existcheck_reqval:
         existresult_desc = 'does not exist' if existcheck_reqval is True else 'already exists'
-        raise cerr.ScriptArgumentError("argument {}: {} {}".format(argstr, pathtype_desc, existresult_desc))
+        raise cerr.ScriptArgumentError("argument {} '{}': {} {}".format(argstr, path, pathtype_desc, existresult_desc))
 
     access_desc_reqtrue_list = [mode_descr for mode, mode_descr in accesscheck_mode_desc_list if mode in accesscheck_reqtrue]
     access_desc_reqfalse_list = [mode_descr for mode, mode_descr in accesscheck_mode_desc_list if mode in accesscheck_reqfalse]
@@ -92,7 +97,7 @@ def argtype_path_handler(path, argstr,
         ])
         errmsg = ' '.join(errmsg.split())
         errmsg = errmsg.replace(' ,', ',')
-        raise cerr.ScriptArgumentError("argument {}: {}".format(argstr, errmsg))
+        raise cerr.ScriptArgumentError("argument {} '{}': {}".format(argstr, path, errmsg))
 
     return_path = abspath_fn(path) if abspath_fn is not None else path
     if preserve_trailing_separator:
@@ -188,7 +193,7 @@ def argtype_num_handler(num_str, argstr,
                     errmsg = input_cond
 
     if errmsg is not None:
-        raise cerr.ScriptArgumentError("argument {}: {}".format(argstr, errmsg))
+        raise cerr.ScriptArgumentError("argument {} '{}': {}".format(argstr, num_str, errmsg))
     else:
         return number_true
 

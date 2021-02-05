@@ -211,7 +211,9 @@ def pre_argparse():
     psu_tl.pre_argparse(ARGDEF_SRCLIST_DELIM, argstr_dst=ARGSTR_DST)
 
 
-def argparser_init():
+def argparser_init(skip_src_path_check=False, skip_dst_path_check=False,
+                   src_prefix=None, src_suffix=None,
+                   dst_prefix=None, dst_suffix=None):
     global ARGHLP_SRCLIST_FORMAT, ARGHLP_SRCLIST_ROOTED_FORMAT
 
     parser = argparse.ArgumentParser(
@@ -225,12 +227,18 @@ def argparser_init():
 
     ## Positional arguments
 
-    parser.add_argument(
-        ARGSTR_SRC_POS,
-        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_SRC_POS,
+    if not skip_src_path_check:
+        argtype_src = psu_at.ARGTYPE_PATH(argstr=ARGSTR_SRC_POS,
             existcheck_fn=os.path.exists,
             existcheck_reqval=True,
-            accesscheck_reqtrue=os.R_OK),
+            accesscheck_reqtrue=os.R_OK,
+            append_prefix=src_prefix,
+            append_suffix=src_suffix,)
+    else:
+        argtype_src = str
+    parser.add_argument(
+        ARGSTR_SRC_POS,
+        type=argtype_src,
         nargs='+',
         action='append',
         help=' '.join([
@@ -248,9 +256,7 @@ def argparser_init():
         argtype_dst = str
     parser.add_argument(
         ARGSTR_DST_POS,
-        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_DST_POS,
-            accesscheck_reqtrue=os.W_OK,
-            accesscheck_parent_if_dne=True),
+        type=argtype_dst,
         help=' '.join([
             "Path to output file copy, or directory in which copies of source files will be created.",
             "To provide a destination directory that overrides all destination paths in source lists,",
@@ -263,10 +269,7 @@ def argparser_init():
 
     parser.add_argument(
         '-s', ARGSTR_SRC,
-        type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_SRC,
-            existcheck_fn=os.path.exists,
-            existcheck_reqval=True,
-            accesscheck_reqtrue=os.R_OK),
+        type=argtype_src,
         nargs='+',
         action='append',
         help=' '.join([
@@ -347,9 +350,18 @@ def main():
 
     ### Parse script arguments
     pre_argparse()
-    arg_parser = argparser_init()
+    arg_parser = argparser_init(skip_src_path_check=True, skip_dst_path_check=True)
     args = psu_act.parse_args(PYTHON_EXE, SCRIPT_FILE, arg_parser, sys.argv,
                               DOUBLED_ARGS, DOUBLED_ARGS_RESTRICTED_OPTGRP)
+    # Parse again, incorporating any path modification arguments
+    arg_parser = argparser_init(
+        src_prefix=args.get(psu_tl.ARGSTR_SRCLIST_PREFIX),
+        src_suffix=args.get(psu_tl.ARGSTR_SRCLIST_SUFFIX),
+        dst_prefix=args.get(psu_tl.ARGSTR_SRCLIST_PREFIX_DST)
+    )
+    args = psu_act.parse_args(PYTHON_EXE, SCRIPT_FILE, arg_parser, sys.argv,
+                              DOUBLED_ARGS, DOUBLED_ARGS_RESTRICTED_OPTGRP)
+
     ### Setup logging
     psu_log.setup_logging(capture_warnings=True)
     if args.get(psu_act.ARGSTR_DEBUG):
