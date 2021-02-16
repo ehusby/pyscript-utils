@@ -487,6 +487,10 @@ class WalkObject(object):
             copy_method_is_fmtstr = False
         if copy_quiet and copy_dryrun:
             raise cerr.InvalidArgumentError("`copy_quiet` and `copy_dryrun` arguments are mutually exclusive")
+        if any([item is not None for item in [fmatch, fmatch_re, fexcl, fexcl_re, fsub]]):
+            if allow_dir_op is True:
+                raise cerr.InvalidArgumentError("`allow_dir_op` cannot be True when file pattern arguments are provided")
+            allow_dir_op = False
         if list_function is not None and list_function not in WALK_LIST_FUNCTION_AVAIL:
             raise cerr.InvalidArgumentError("`list_function` must be either os.listdir or os.scandir")
 
@@ -625,7 +629,8 @@ class WalkObject(object):
                 copy_debug=copy_debug
             )
 
-        if allow_dir_op is None and copy_method.action_verb.upper() in ('SYMLINKING', 'MOVING'):
+        if allow_dir_op is None and (   copy_method.action_verb.upper() in ('SYMLINKING', 'MOVING')
+                                     or copy_overwrite_dirs or copy_overwrite_dmatch):
             allow_dir_op = True
         if copy_overwrite_dmatch is None:
             copy_overwrite_dmatch = False
@@ -722,7 +727,8 @@ class WalkObject(object):
                 os.makedirs(os.path.dirname(os.path.normpath(self.dstdir)), exist_ok=True)
             copy_success = self.copy_method_inst.copy(
                 self.srcdir, self.dstdir,
-                overwrite_dir=(self.copy_method_inst.copy_overwrite_dirs or (self.copy_overwrite_dmatch and dmatch_depth == 1))
+                srcpath_is_file=False,
+                overwrite_dir=(self.copy_method_inst.copy_overwrite_dirs or (self.copy_overwrite_dmatch and dmatch_depth == 1)),
             )
             return
 
@@ -843,7 +849,7 @@ class WalkObject(object):
                         for re_pattern, repl_str in self.fname_resub:
                             fname = self.resub_function(re_pattern, repl_str, fname)
                     dstfile = os.path.join(dstdir, fname)
-                    copy_success = self.copy_method_inst.copy(srcfile, dstfile)
+                    copy_success = self.copy_method_inst.copy(srcfile, dstfile, srcpath_is_file=True)
 
             dnames_yield = (     dnames_filtered if (dnames_filtered_pass is None or srcdir_passes)
                             else [dn for i, dn in enumerate(dnames_filtered) if dnames_filtered_pass[i]])
@@ -898,12 +904,15 @@ class WalkObject(object):
                             dstdname_next = self.resub_function(re_pattern, repl_str, dstdname_next)
                     dstdir_next = os.path.join(dstdir, dstdname_next)
 
-                if self.allow_dir_op and srcdir_next_passes and depth >= self.mindepth:
+                if self.allow_dir_op and depth >= self.mindepth and (
+                    (not self.copy_overwrite_dmatch) or srcdir_next_passes):
                     if not self.copy_method_inst.dryrun:
                         os.makedirs(os.path.dirname(os.path.normpath(dstdir_next)), exist_ok=True)
                     copy_success = self.copy_method_inst.copy(
                         srcdir_next, dstdir_next,
-                        overwrite_dir=(self.copy_method.copy_overwrite_dirs or self.copy_overwrite_dmatch)
+                        srcpath_is_file=False,
+                        overwrite_dir=(    self.copy_method_inst.copy_overwrite_dirs
+                                       or (self.copy_overwrite_dmatch and srcdir_next_passes))
                     )
                 elif depth < self.maxdepth or (self.dmatch_maxdepth_specified and dmatch_depth != -1):
                     for x in self._walk(srcdir_next, dstdir_next, depth_next, dmatch_depth_next):

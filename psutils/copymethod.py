@@ -33,7 +33,8 @@ for prog in ['mv', 'move']:
 class CopyMethod(object):
     def __init__(self,
                  copy_fn, copy_fn_name=None, action_verb=None,
-                 reverse_args=None, copy_shcmd_is_fmtstr=False):
+                 reverse_args=None, copy_shcmd_is_fmtstr=False,
+                 recursive_file_op=None):
         copy_shcmd = None
         copy_shprog = None
         copy_fn_type = type(copy_fn)
@@ -79,6 +80,8 @@ class CopyMethod(object):
 
         if reverse_args is None:
             reverse_args = False
+        if recursive_file_op is None:
+            recursive_file_op = (action_verb.upper() not in ('SYMLINKING', 'MOVING'))
 
         self.copy_fn = copy_fn
         self.copy_fn_name = copy_fn_name
@@ -88,6 +91,7 @@ class CopyMethod(object):
         self.copy_shprog = copy_shprog
         self.copy_shcmd_is_fmtstr = copy_shcmd_is_fmtstr
 
+        self.recursive_file_op = recursive_file_op
         self.check_srcpath_exists = True
         self.copy_makedirs = True
         self.copy_overwrite_files = False
@@ -99,10 +103,18 @@ class CopyMethod(object):
     def __copy__(self):
         copy_method = CopyMethod(self.copy_fn, self.copy_fn_name, self.action_verb,
                                  self.reverse_args, self.copy_shcmd_is_fmtstr)
-        copy_method.set_options(self.check_srcpath_exists, self.copy_makedirs, self.copy_overwrite_files, self.copy_overwrite_dirs, self.dryrun, self.verbose, self.debug)
+        copy_method.set_options(
+            self.recursive_file_op, self.check_srcpath_exists,
+            self.copy_makedirs, self.copy_overwrite_files, self.copy_overwrite_dirs,
+            self.dryrun, self.verbose, self.debug)
         return copy_method
 
-    def set_options(self, check_srcpath_exists=None, copy_makedirs=None, copy_overwrite_files=None, copy_overwrite_dirs=None, copy_dryrun=None, copy_verbose=None, copy_debug=None):
+    def set_options(self,
+                    recursive_file_op=None, check_srcpath_exists=None,
+                    copy_makedirs=None, copy_overwrite_files=None, copy_overwrite_dirs=None,
+                    copy_dryrun=None, copy_verbose=None, copy_debug=None):
+        if recursive_file_op:
+            self.recursive_file_op = recursive_file_op
         if check_srcpath_exists:
             self.check_srcpath_exists = check_srcpath_exists
         if copy_makedirs is not None:
@@ -118,7 +130,36 @@ class CopyMethod(object):
         if copy_debug is not None:
             self.debug = copy_debug
 
+    def get_copy_shcmd_full(self, srcpath, dstpath):
+        if self.copy_shcmd is None:
+            return None
+        elif self.copy_shcmd_is_fmtstr:
+            return self.copy_shcmd.format(srcpath, dstpath)
+        elif self.reverse_args:
+            return "{} '{}' '{}'".format(self.copy_shcmd, dstpath, srcpath)
+        else:
+            return "{} '{}' '{}'".format(self.copy_shcmd, srcpath, dstpath)
+
+    def get_copy_fn_debug(self, srcpath, dstpath):
+        debug_str = None
+        if self.copy_shcmd is not None:
+            debug_str = self.get_copy_shcmd_full(srcpath, dstpath)
+        elif self.reverse_args:
+            debug_str = "{}('{}', '{}')".format(self.copy_fn_name, dstpath, srcpath)
+        else:
+            debug_str = "{}('{}', '{}')".format(self.copy_fn_name, srcpath, dstpath)
+        return debug_str
+
+    def exec_copy_fn(self, srcpath, dstpath):
+        if self.copy_shcmd is not None:
+            execute_shell_command(self.get_copy_shcmd_full(srcpath, dstpath))
+        elif self.reverse_args:
+            self.copy_fn(dstpath, srcpath)
+        else:
+            self.copy_fn(srcpath, dstpath)
+
     def copy(self, srcpath, dstpath,
+             srcpath_is_file=None,
              overwrite_file=None, overwrite_dir=None):
 
         if overwrite_file is None:
@@ -179,22 +220,10 @@ class CopyMethod(object):
         if not proceed_with_copy:
             return proceed_with_copy
 
-        copy_shcmd_full = None
-        if self.copy_shcmd is not None and proceed_with_copy:
-            if self.copy_shcmd_is_fmtstr:
-                copy_shcmd_full = self.copy_shcmd.format(srcpath, dstpath)
-            elif self.reverse_args:
-                copy_shcmd_full = "{} '{}' '{}'".format(self.copy_shcmd, dstpath, srcpath)
-            else:
-                copy_shcmd_full = "{} '{}' '{}'".format(self.copy_shcmd, srcpath, dstpath)
+        if self.debug:
+            debug(self.get_copy_fn_debug(srcpath, dstpath))
 
-        if self.debug and proceed_with_copy:
-            if copy_shcmd_full is not None:
-                debug(copy_shcmd_full)
-            else:
-                debug("{}('{}', '{}')".format(self.copy_fn_name, srcpath, dstpath))
-
-        if not self.dryrun and proceed_with_copy:
+        if not self.dryrun:
 
             if dstpath_stat is not None:
                 if stat.S_ISDIR(dstpath_stat.st_mode) and overwrite_dir:
@@ -205,12 +234,16 @@ class CopyMethod(object):
             elif self.copy_makedirs:
                 os.makedirs(os.path.dirname(dstpath), exist_ok=True)
 
-            if copy_shcmd_full is not None:
-                execute_shell_command(copy_shcmd_full)
-            elif self.reverse_args:
-                self.copy_fn(dstpath, srcpath)
+            if srcpath_is_file is None and self.recursive_file_op:
+                if srcpath_stat is None:
+                    srcpath_stat = os.stat(srcpath)
+                srcpath_is_file = (not stat.S_ISDIR(srcpath_stat.st_mode))
+
+            if srcpath_is_file or not self.recursive_file_op:
+                self.exec_copy_fn(srcpath, dstpath)
             else:
-                self.copy_fn(srcpath, dstpath)
+                shutil.copytree(srcpath, dstpath,
+                                copy_function=self.exec_copy_fn)
 
         return proceed_with_copy
 
