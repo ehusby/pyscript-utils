@@ -28,7 +28,7 @@ SCRIPT_RUNCMD = ' '.join(sys.argv)+'\n'
 PYTHON_EXE = 'python -u'
 
 try:
-    # Look for PSU alongside script when developing
+    # Check if PSU package is installed
     import psutils
 except ImportError:
     # Look for PSU repo alongside script directory
@@ -166,7 +166,7 @@ ARGDEF_JOB_MEMORY_GB = 5
 ARGDEF_COPY_METHOD = psu_cm.ARGCHO_COPY_METHOD_LINK
 ARGDEF_MINDEPTH = 0
 ARGDEF_MAXDEPTH = psu_at.ARGNUM_POS_INF
-ARGDEF_DMATCH_MAXDEPTH = psu_at.ARGNUM_POS_INF
+ARGDEF_DMATCH_MAXDEPTH = None
 ARGDEF_OUTDEPTH = None
 ARGDEF_SRCLIST_DELIM = ','
 ARGDEF_BUNDLEDIR = os.path.realpath(os.path.join(os.path.expanduser('~'), 'scratch', 'task_bundles'))

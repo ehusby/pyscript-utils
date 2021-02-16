@@ -506,6 +506,9 @@ class WalkObject(object):
 
         if dmatch_maxdepth is None:
             dmatch_maxdepth = float('inf') if copy_method is not None else -1
+            dmatch_maxdepth_specified = False
+        else:
+            dmatch_maxdepth_specified = True
 
         list_function_given, rematch_function_given, resub_function_given = [
             item is not None for item in [
@@ -634,6 +637,7 @@ class WalkObject(object):
         self.outdepth = outdepth
         self.outdepth_inst = outdepth
         self.dmatch_maxdepth = dmatch_maxdepth
+        self.dmatch_maxdepth_specified = dmatch_maxdepth_specified
         self.fname_rematch = fname_rematch
         self.fname_reexcl = fname_reexcl
         self.dname_rematch = dname_rematch
@@ -692,7 +696,7 @@ class WalkObject(object):
             )
 
         depth = 0
-        dmatch_depth = -1 if not (self.dname_rematch or self.dname_reexcl) else 0
+        dmatch_depth = -1 if not self.dname_rematch else 0
 
         if dmatch_depth == 0:
             srcdname = os.path.basename(self.srcdir)
@@ -739,7 +743,8 @@ class WalkObject(object):
         #     self.tqdm = None
 
     def _walk(self, srcdir, dstdir, depth, dmatch_depth=-1):
-        if depth > self.maxdepth and not (1 <= dmatch_depth <= self.dmatch_maxdepth):
+        if depth > self.maxdepth and not (    self.dmatch_maxdepth_specified
+                                          and 1 <= dmatch_depth <= self.dmatch_maxdepth):
             return
 
         # if depth == 1 and dmatch_depth == 0:
@@ -854,7 +859,8 @@ class WalkObject(object):
             self.tqdm.total = int(item_count)
             self.tqdm.update(added_count)
 
-        if dnames_filtered and (depth < self.maxdepth or dmatch_depth != -1):
+        if dnames_filtered and (   (depth < self.maxdepth or self.allow_dir_op)
+                                or (self.dmatch_maxdepth_specified and dmatch_depth != -1)):
             depth_next = depth + 1
 
             if dmatch_depth == -1:
@@ -899,7 +905,7 @@ class WalkObject(object):
                         srcdir_next, dstdir_next,
                         overwrite_dir=(self.copy_method.copy_overwrite_dirs or self.copy_overwrite_dmatch)
                     )
-                else:
+                elif depth < self.maxdepth or (self.dmatch_maxdepth_specified and dmatch_depth != -1):
                     for x in self._walk(srcdir_next, dstdir_next, depth_next, dmatch_depth_next):
                         yield x
 
