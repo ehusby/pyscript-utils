@@ -491,7 +491,7 @@ def perform_tasks(args, task_list):
             copy_debug=args.get(psu_act.ARGSTR_DEBUG)
         )
 
-    tqdm_func = tqdm if imported_tqdm else identity
+    tqdm_func = tqdm if imported_tqdm and len(task_list) > 1 else identity
     for task_srcpath, task_dstpath in tqdm_func(task_list):
         if os.path.isfile(task_srcpath):
             task_srcfile = task_srcpath

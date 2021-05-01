@@ -251,23 +251,29 @@ def walk_simple(srcdir, mindepth=0, maxdepth=float('inf'), list_srcdname=False,
 
     srcdir = os.path.abspath(srcdir)
     if track_item is not None:
-        my_tftc = TrackFileTreeCount(track_item)
-        my_tqdm = tqdm(total=0, unit=track_item_unit, disable=False)
         if track_initialize_total:
             print("First counting {}s to process in directory: {}".format(
                 track_item_unit, srcdir
             ))
-            my_tqdm.update(0)
+        my_tftc = TrackFileTreeCount(track_item)
+        my_tqdm = tqdm(total=0, unit=track_item_unit, disable=False)
+        # my_tqdm = tqdm(total=0, unit=track_item_unit, disable=False) if not track_initialize_total else None
+
+        if track_initialize_total:
+            if my_tqdm is not None:
+                my_tqdm.update(0)
             exhaust(
                 _walk_simple(srcdir, 1, mindepth, maxdepth, list_function,
                              my_tftc, my_tqdm, update_total_count=True)
             )
-            item_count, item_est = my_tftc.get_item_count_estimate()
-            my_tqdm.close()
+            item_total, item_est = my_tftc.get_item_count_estimate()
+            if my_tqdm is not None:
+                my_tqdm.close()
+
             print("Now processing {}s in directory: {}".format(
                 track_item_unit, srcdir
             ))
-            my_tqdm = tqdm(total=item_count, unit=track_item_unit, disable=False)
+            my_tqdm = tqdm(total=item_total, unit=track_item_unit, disable=False)
             my_tftc = TrackFileTreeCount(
                 track_item,
                 initial_file_estimate=my_tftc.total_file_estimate,
@@ -313,15 +319,17 @@ def _walk_simple(rootdir, depth, mindepth, maxdepth, list_function,
     if mindepth <= depth:
         yield rootdir, dnames, fnames
 
-    if my_tftc is not None and my_tqdm is not None:
+    if my_tftc is not None:
         added_count = my_tftc.add(depth, len(dnames), len(fnames) if mindepth <= depth else 0)
         if update_total_count:
             if len(dnames) == 0:
                 for i in range(depth+1, my_tftc.max_depth_found+1):
                     my_tftc.update_estimates(i)
-            item_count, item_est = my_tftc.get_item_count_estimate()
-            my_tqdm.total = int(item_est)
-        my_tqdm.update(added_count)
+        if my_tqdm is not None:
+            if update_total_count:
+                item_count, item_est = my_tftc.get_item_count_estimate()
+                my_tqdm.total = int(item_est)
+            my_tqdm.update(added_count)
 
     if depth < maxdepth:
         for dname in dnames:
@@ -651,6 +659,7 @@ class WalkObject(object):
         self.dname_resub = dname_resub
         self.copy_method = copy_method
         self.copy_method_inst = None if copy_method is None else copy.copy(self.copy_method)
+        self.copy_overwrite_dmatch = copy_overwrite_dmatch
         self.collapse_tree = collapse_tree
         self.collapse_tree_inst = collapse_tree
         self.allow_dir_op = allow_dir_op
@@ -660,13 +669,15 @@ class WalkObject(object):
         self.resub_function = resub_function
         self.tftc = None
         self.tqdm = None
-        self.copy_overwrite_dmatch = copy_overwrite_dmatch
+        self.track_count_only = False
+        self.track_update_total = True
 
     def walk(self,
              srcdir, dstdir=None,
              copy_overwrite_files=None, copy_overwrite_dirs=None,
              sync_tree=False, transplant_tree=False, collapse_tree=None,
-             copy_dryrun=None, copy_quiet=None, copy_debug=None):
+             copy_dryrun=None, copy_quiet=None, copy_debug=None,
+             track_initialize_total=False):
         if collapse_tree is None:
             collapse_tree = self.collapse_tree
 
@@ -733,14 +744,50 @@ class WalkObject(object):
             return
 
         if imported_tqdm:
+            if track_initialize_total:
+                print("First counting files to process in directory: {}".format(self.srcdir))
             self.tftc = TrackFileTreeCount(WALK_TRACK_FILES)
-            self.tqdm = tqdm(total=1, unit=WALK_TRACK_ITEM_UNIT_DICT[WALK_TRACK_FILES], disable=False)
+            self.tqdm = tqdm(total=0, unit=WALK_TRACK_ITEM_UNIT_DICT[WALK_TRACK_FILES], disable=False)
+            # self.tqdm = tqdm(total=0, unit=WALK_TRACK_ITEM_UNIT_DICT[WALK_TRACK_FILES], disable=False) if not track_initialize_total else None
 
         if self.copy_method_inst is not None and self.dstdir is not None and not os.path.isdir(self.dstdir):
             if not self.copy_method_inst.dryrun:
                 os.makedirs(self.dstdir)
 
         depth = 1
+
+        if self.tftc is not None:
+            if track_initialize_total:
+                self.track_count_only = True
+                self.track_update_total = True
+                dryrun_backup = self.copy_method_inst.dryrun
+                self.copy_method_inst.dryrun = True
+                depth_backup = depth
+
+                if self.tqdm is not None:
+                    self.tqdm.update(0)
+                exhaust(self._walk(self.srcdir, self.dstdir, depth, dmatch_depth))
+                item_total, item_est = self.tftc.get_item_count_estimate()
+                if self.tqdm is not None:
+                    self.tqdm.close()
+
+                print("Now processing files in directory: {}".format(self.srcdir))
+                self.tqdm = tqdm(total=item_total, unit=WALK_TRACK_ITEM_UNIT_DICT[WALK_TRACK_FILES], disable=False)
+                self.tftc = TrackFileTreeCount(
+                    WALK_TRACK_FILES,
+                    initial_file_estimate=self.tftc.total_file_estimate,
+                    initial_folder_estimate=self.tftc.total_folder_estimate,
+                    track_estimates=False
+                )
+                self.tqdm.update(0)
+
+                self.track_count_only = False
+                self.track_update_total = False
+                self.copy_method_inst.dryrun = dryrun_backup
+                depth = depth_backup
+
+            self.tqdm.update(0)
+
         for x in self._walk(self.srcdir, self.dstdir, depth, dmatch_depth):
             yield x
 
@@ -820,7 +867,7 @@ class WalkObject(object):
                     else:
                         dnames_filtered_pass.append(False)
 
-            elif srcdir_passes:
+            elif depth >= self.mindepth and srcdir_passes:
                 fname_match = True
                 if self.fname_rematch:
                     fname_match = False
@@ -836,9 +883,9 @@ class WalkObject(object):
                 if fname_match:
                     fnames_filtered.append(pname)
 
-        if depth >= self.mindepth:
+        if depth >= self.mindepth and srcdir_passes and not self.track_count_only:
 
-            if srcdir_passes and self.copy_method_inst is not None and dstdir is not None:
+            if self.copy_method_inst is not None and dstdir is not None:
                 if not dstdir_exists and (not self.mkdir_upon_file_copy or fnames_filtered):
                     if not self.copy_method_inst.dryrun:
                         os.makedirs(dstdir)
@@ -851,19 +898,22 @@ class WalkObject(object):
                     dstfile = os.path.join(dstdir, fname)
                     copy_success = self.copy_method_inst.copy(srcfile, dstfile, srcpath_is_file=True)
 
-            dnames_yield = (     dnames_filtered if (dnames_filtered_pass is None or srcdir_passes)
+            dnames_yield = (      dnames_filtered if (dnames_filtered_pass is None or srcdir_passes)
                             else [dn for i, dn in enumerate(dnames_filtered) if dnames_filtered_pass[i]])
 
             yield srcdir, dnames_yield, fnames_filtered
 
-        if imported_tqdm:
-            added_count = self.tftc.add(depth, len(dnames_filtered), len(fnames_filtered) if depth >= self.mindepth else 0)
-            if len(dnames_filtered) == 0:
-                for i in range(depth+1, self.tftc.max_depth_found+1):
-                    self.tftc.update_estimates(i)
-            item_count, item_est = self.tftc.get_item_count_estimate()
-            self.tqdm.total = int(item_count)
-            self.tqdm.update(added_count)
+        if self.tftc is not None:
+            added_count = self.tftc.add(depth, len(dnames_filtered), len(fnames_filtered))
+            if self.track_update_total:
+                if len(dnames_filtered) == 0:
+                    for i in range(depth+1, self.tftc.max_depth_found+1):
+                        self.tftc.update_estimates(i)
+            if self.tqdm is not None:
+                if self.track_update_total:
+                    item_count, item_est = self.tftc.get_item_count_estimate()
+                    self.tqdm.total = int(item_count)
+                self.tqdm.update(added_count)
 
         if dnames_filtered and (   (depth < self.maxdepth or self.allow_dir_op)
                                 or (self.dmatch_maxdepth_specified and dmatch_depth != -1)):
@@ -904,8 +954,9 @@ class WalkObject(object):
                             dstdname_next = self.resub_function(re_pattern, repl_str, dstdname_next)
                     dstdir_next = os.path.join(dstdir, dstdname_next)
 
-                if self.allow_dir_op and depth >= self.mindepth and (
-                    (not self.copy_overwrite_dmatch) or srcdir_next_passes):
+                if (      self.allow_dir_op and depth >= self.mindepth
+                    and ((not self.copy_overwrite_dmatch) or srcdir_next_passes)
+                    and not self.track_count_only):
                     if not self.copy_method_inst.dryrun:
                         os.makedirs(os.path.dirname(os.path.normpath(dstdir_next)), exist_ok=True)
                     copy_success = self.copy_method_inst.copy(
