@@ -1,6 +1,7 @@
 
 import contextlib
 import sys
+import traceback
 import warnings
 
 import psutils.globals as psu_globals
@@ -22,6 +23,13 @@ def capture_stdout_stderr():
         sys.stdout, sys.stderr = oldout, olderr
         out[0] = out[0].getvalue()
         out[1] = out[1].getvalue()
+
+
+def capture_error_trace():
+    with capture_stdout_stderr() as out:
+        traceback.print_exc()
+    caught_out, caught_err = out
+    return caught_err
 
 
 showwarning_stderr = warnings.showwarning

@@ -16,7 +16,7 @@ import psutils.scheduler as psu_sched
 from psutils.print_methods import *
 
 from psutils import PYTHON_VERSION_REQUIRED_MIN
-from psutils.stream import capture_stdout_stderr
+from psutils.stream import capture_stdout_stderr, capture_error_trace
 from psutils.func import with_noop
 
 
@@ -332,10 +332,7 @@ def submit_tasks_to_scheduler(parent_args, parent_tasks,
 
 
 def handle_task_exception(args, error):
-    with capture_stdout_stderr() as out:
-        traceback.print_exc()
-    caught_out, caught_err = out
-    error_trace = caught_err
+    error_trace = capture_error_trace()
     eprint("Caught the following exception during script task execution\n{}".format(error_trace))
     if error.__class__ is ImportError:
         print(' '.join([
