@@ -229,9 +229,9 @@ def add_walk_arguments(parser,
     )
 
 
-def walk_simple(srcdir, mindepth=0, maxdepth=float('inf'), list_srcdname=False,
-                list_function=WALK_LIST_FUNCTION_DEFAULT,
-                track_item=None, track_initialize_total=True):
+def walk_simple(srcdir, mindepth=1, maxdepth=float('inf'),
+                track_item=None, track_initialize_total=True,
+                list_function=WALK_LIST_FUNCTION_DEFAULT):
 
     if not os.path.isdir(srcdir):
         raise cerr.InvalidArgumentError("`srcdir` directory does not exist: {}".format(srcdir))
@@ -285,7 +285,7 @@ def walk_simple(srcdir, mindepth=0, maxdepth=float('inf'), list_srcdname=False,
         my_tftc = None
         my_tqdm = None
 
-    if list_srcdname and mindepth == 0:
+    if mindepth == 0:
         if my_tqdm is not None and track_item in (WALK_TRACK_DIRS, WALK_TRACK_BOTH):
             my_tqdm.total += 1
             my_tqdm.update(0)
@@ -994,7 +994,7 @@ class WalkObject(object):
 
 
 def _walk(
-    srcdir, dstdir=None, list_srcdname=False,
+    srcdir, dstdir=None,
     mindepth=None, maxdepth=float('inf'), outdepth=None, dmatch_maxdepth=None,
     fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
     dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
@@ -1034,7 +1034,7 @@ def _walk(
         resub_function,
         rematch_partial
     )
-    if list_srcdname and mindepth == 0:
+    if mindepth == 0:
         updir = os.path.dirname(srcdir)
         srcdname = os.path.basename(srcdir)
         yield updir, [srcdname], []
@@ -1043,7 +1043,7 @@ def _walk(
 
 
 def walk(
-    srcdir, dstdir=None, list_srcdname=False,
+    srcdir, dstdir=None,
     mindepth=None, maxdepth=float('inf'), outdepth=None, dmatch_maxdepth=None,
     fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
     dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
@@ -1052,7 +1052,7 @@ def walk(
     rematch_partial=False
 ):
     for x in _walk(
-        srcdir, dstdir, list_srcdname,
+        srcdir, dstdir,
         mindepth, maxdepth, outdepth, dmatch_maxdepth,
         fmatch, fmatch_re, fexcl, fexcl_re,
         dmatch, dmatch_re, dexcl, dexcl_re,
@@ -1063,7 +1063,7 @@ def walk(
 
 
 def find(
-    srcdir, dstdir=None, list_srcdname=False,
+    srcdir, dstdir=None,
     vreturn=None, vyield=None, print_findings=False,
     mindepth=None, maxdepth=float('inf'), outdepth=None, dmatch_maxdepth=None,
     fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
@@ -1115,7 +1115,7 @@ def find(
     mix_all = []
     def _find_iter():
         for rootdir, dnames, fnames in _walk(
-            srcdir, dstdir, list_srcdname,
+            srcdir, dstdir,
             mindepth, maxdepth, outdepth, dmatch_maxdepth,
             fmatch, fmatch_re, fexcl, fexcl_re,
             dmatch, dmatch_re, dexcl, dexcl_re,
@@ -1178,7 +1178,7 @@ def find(
         return _find_iter()
 
     if vreturn:
-        collections.deque(_find_iter(), maxlen=0)
+        exhaust(_find_iter())
         if len(return_items) == 1:
             item = return_items[0]
             return_results = files_all if item == FIND_RETURN_FILES else (dirs_all if item == FIND_RETURN_FILES else mix_all)
@@ -1197,7 +1197,7 @@ def copy_tree(
     fmatch=None, fmatch_re=None, fexcl=None, fexcl_re=None,
     dmatch=None, dmatch_re=None, dexcl=None, dexcl_re=None,
     fsub=None, dsub=None,
-    vreturn=None, vyield=None, print_findings=False, list_srcdname=False,
+    vreturn=None, vyield=None, print_findings=False,
     dryrun=False, quiet=False, debug=False,
     allow_dir_op=None,
     mkdir_upon_file_copy=False,
@@ -1213,7 +1213,7 @@ def copy_tree(
     if copy_method is None:
         raise cerr.InvalidArgumentError("`copy_method` cannot be None")
     find(
-        srcdir, dstdir, list_srcdname,
+        srcdir, dstdir,
         vreturn, vyield, print_findings,
         mindepth, maxdepth, dmatch_maxdepth,
         fmatch, fmatch_re, fexcl, fexcl_re,
