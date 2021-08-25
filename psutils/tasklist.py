@@ -158,6 +158,7 @@ def add_srclist_arguments(parser,
     parser.add_argument(
         '-slp', ARGSTR_SRCLIST_PREFIX,
         type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_SRCLIST_PREFIX,
+            abspath_fn=None,
             existcheck_fn=os.path.isdir,
             existcheck_reqval=True),
         help=' '.join([
@@ -167,6 +168,7 @@ def add_srclist_arguments(parser,
     parser.add_argument(
         '-slpd', ARGSTR_SRCLIST_PREFIX_DST,
         type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_SRCLIST_PREFIX_DST,
+            abspath_fn=None,
             existcheck_fn=os.path.isfile,
             existcheck_reqval=False,
             accesscheck_reqtrue=os.W_OK,
@@ -186,6 +188,7 @@ def add_srclist_arguments(parser,
     parser.add_argument(
         '-slrd', ARGSTR_SRCLIST_ROOTDIR,
         type=psu_at.ARGTYPE_PATH(argstr=ARGSTR_SRCLIST_PREFIX,
+            abspath_fn=None,
             existcheck_fn=os.path.isdir,
             existcheck_reqval=True),
         help=' '.join([
