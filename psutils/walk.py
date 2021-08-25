@@ -249,7 +249,6 @@ def walk_simple(srcdir, mindepth=1, maxdepth=float('inf'),
     if maxdepth == 0:
         track_initialize_total = False
 
-    srcdir = os.path.abspath(srcdir)
     if track_item is not None:
         if track_initialize_total:
             print("First counting {}s to process in directory: {}".format(
