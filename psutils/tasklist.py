@@ -947,6 +947,7 @@ def parse_src_args(args, argstr_src, argstr_dst, skip_dir_adjust=False):
             for src_path_single in src_path_glob:
 
                 src_path_from_root = src_path_single.replace(src_rootdir, '') if src_path_single.startswith(src_rootdir) else src_path_single
+                src_path_from_root = src_path_from_root.lstrip(PATH_SEPARATORS_CAT)
                 if tasklist_dst_rootdir is None and sync_mode == ARGMOD_SYNC_MODE_TRANSPLANT_TREE:
                     dst_path_single = os.path.join(dst_rootdir, src_rootdir_dirname, src_path_from_root)
                 else:
