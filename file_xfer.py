@@ -476,6 +476,7 @@ def perform_tasks(args, task_list):
         allow_dir_op=(False if args.get(psu_cm.ARGSTR_SYMLINK_FILES) else None), mkdir_upon_file_copy=args.get(psu_cm.ARGSTR_MKDIR_UPON_FILE_COPY),
         sync_tree=args.get(psu_tl.ARGSTR_SYNC_TREE), transplant_tree=args.get(psu_tl.ARGSTR_TRANSPLANT_TREE), collapse_tree=args.get(psu_tl.ARGSTR_COLLAPSE_TREE),
         copy_dryrun=args.get(psu_act.ARGSTR_DRYRUN), copy_quiet=args.get(psu_act.ARGSTR_QUIET), copy_debug=args.get(psu_act.ARGSTR_DEBUG),
+        track_initialize_total=(args.get(psu_walk.ARGSTR_COUNT_FIRST) == psu_walk.ARGCHO_COUNT_FIRST_ON)
     )
 
     do_record_hardlinks = (args.get(psu_cm.ARGSTR_COPY_METHOD) == psu_cm.ARGCHO_COPY_METHOD_LINK and not args.get(ARGSTR_NO_HARDLINK_RECORDS))

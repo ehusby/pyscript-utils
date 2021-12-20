@@ -40,6 +40,7 @@ ARGSTR_DMATCH_RE = '--dmatch-re'
 ARGSTR_DEXCL = '--dexcl'
 ARGSTR_DEXCL_RE = '--dexcl-re'
 ARGSTR_DSUB_RE = '--dsub-re'
+ARGSTR_COUNT_FIRST = '--count-first'
 
 ## Argument groups ("ARGGRP_" lists of "ARGSTR_" argument strings)
 ARGGRP_FILEMATCH = [
@@ -47,11 +48,20 @@ ARGGRP_FILEMATCH = [
     ARGSTR_DMATCH, ARGSTR_DMATCH_RE, ARGSTR_DEXCL, ARGSTR_DEXCL_RE,
 ]
 
+# Argument choices (declare "ARGCHO_{ARGSTR}_{option}" options followed by list of all options as "ARGCHO_{ARGSTR}")
+ARGCHO_COUNT_FIRST_ON = 'on'
+ARGCHO_COUNT_FIRST_OFF = 'off'
+ARGCHO_COUNT_FIRST = [
+    ARGCHO_COUNT_FIRST_ON,
+    ARGCHO_COUNT_FIRST_OFF,
+]
+
 ## Argument defaults ("ARGDEF_")
 ARGDEF_MINDEPTH = 0
 ARGDEF_MAXDEPTH = psu_at.ARGNUM_POS_INF
 ARGDEF_DMATCH_MAXDEPTH = None
 ARGDEF_OUTDEPTH = None
+ARGDEF_COUNT_FIRST = ARGCHO_COUNT_FIRST_ON
 
 ##############################
 
@@ -228,9 +238,19 @@ def add_walk_arguments(parser,
         ])
     )
 
+    parser.add_argument(
+        '-cf', ARGSTR_COUNT_FIRST,
+        type=str,
+        choices=ARGCHO_COUNT_FIRST,
+        default=ARGDEF_COUNT_FIRST,
+        help=' '.join([
+            "[write me]",
+        ])
+    )
+
 
 def walk_simple(srcdir, mindepth=1, maxdepth=float('inf'),
-                track_item=None, track_initialize_total=True,
+                track_item=None, track_initialize_total=(ARGDEF_COUNT_FIRST == ARGCHO_COUNT_FIRST_ON),
                 list_function=WALK_LIST_FUNCTION_DEFAULT):
 
     if not os.path.isdir(srcdir):
@@ -475,7 +495,8 @@ class WalkObject(object):
         list_function=None,
         rematch_function=None,
         resub_function=None,
-        rematch_partial=False
+        rematch_partial=False,
+        track_initialize_total=False
     ):
         if any([depth < 0 for depth in [mindepth, maxdepth, outdepth, dmatch_maxdepth] if depth is not None]):
             raise cerr.InvalidArgumentError("depth arguments must be >= 0")
@@ -669,7 +690,7 @@ class WalkObject(object):
         self.tftc = None
         self.tqdm = None
         self.track_progress = True
-        self.track_initialize_total = True
+        self.track_initialize_total = track_initialize_total
         self.track_count_only = False
         self.track_update_total = True
 
@@ -979,8 +1000,9 @@ class WalkObject(object):
                 if (      self.allow_dir_op and depth >= self.mindepth
                     and ((not self.copy_overwrite_dmatch) or srcdir_next_passes)
                     and not self.track_count_only):
-                    if not self.copy_method_inst.dryrun:
-                        os.makedirs(os.path.dirname(os.path.normpath(dstdir_next)), exist_ok=True)
+                    if not dstdir_exists and not self.copy_method_inst.dryrun:
+                        os.makedirs(dstdir)
+                        dstdir_exists = True
                     copy_success = self.copy_method_inst.copy(
                         srcdir_next, dstdir_next,
                         srcpath_is_file=False,
