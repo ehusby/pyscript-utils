@@ -59,15 +59,15 @@ class ArgumentPasser(object):
         return args
 
     def _update_arg_dict(self):
-        all_argstr = []
-        pos_argstr = []
-        opt_argstr = []
-        varstr2action = {}
-        varstr2argstr = {}
-        argstr2action = {}
-        argstr2argtype = {}
-        argstr2varstr = {}
-        argbrv2argstr = {}
+        all_argstr = set()
+        pos_argstr = set()
+        opt_argstr = set()
+        varstr2action = dict()
+        varstr2argstr = dict()
+        argstr2action = dict()
+        argstr2argtype = dict()
+        argstr2varstr = dict()
+        argbrv2argstr = dict()
         pos_actions = [act for act in self.parser._actions if len(act.option_strings) == 0]
         opt_actions = [act for act in self.parser._actions if len(act.option_strings)  > 0]
         for act in opt_actions + pos_actions:
@@ -82,11 +82,11 @@ class ArgumentPasser(object):
                 argstr2varstr[argstr] = varstr
                 argstr2argtype[argstr] = argtype
                 argbrv2argstr[argstr] = argstr_main
-                all_argstr.append(argstr)
+                all_argstr.add(argstr)
                 if len(act.option_strings) == 0:
-                    pos_argstr.append(argstr)
+                    pos_argstr.add(argstr)
                 else:
-                    opt_argstr.append(argstr)
+                    opt_argstr.add(argstr)
         self.all_argstr = all_argstr
         self.pos_argstr = pos_argstr
         self.opt_argstr = opt_argstr
@@ -170,7 +170,7 @@ class ArgumentPasser(object):
                             "Setting non-boolean argument string '{}' requires "
                             "a non-None `newval` value".format(argstr))
                 self.vars_dict[self.argstr2varstr[argstr]] = newval
-        if set(argstr_list).issubset(set(self.pos_argstr)):
+        if set(argstr_list).issubset(self.pos_argstr):
             self._update_cmd()
         else:
             self._update_cmd_base()
@@ -190,7 +190,7 @@ class ArgumentPasser(object):
             else:
                 newval = None
             self.vars_dict[self.argstr2varstr[argstr]] = newval
-        if set(argstrs).issubset(set(self.pos_argstr)):
+        if set(argstrs).issubset(self.pos_argstr):
             self._update_cmd()
         else:
             self._update_cmd_base()
