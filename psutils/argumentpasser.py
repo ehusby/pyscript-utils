@@ -204,18 +204,21 @@ class ArgumentPasser(object):
 
     def _argval2str(self, item):
         if type(item) is str:
-            if item.startswith("'") and item.endswith("'"):
-                item_str = r"\'{}\'".format(item[1:-1])
-            elif item.startswith('"') and item.endswith('"'):
-                item_str = r'\"{}\"'.format(item[1:-1])
+            if (   (item.startswith("'") and item.endswith("'"))
+                or (item.startswith('"') and item.endswith('"'))):
+                item_str = item
             else:
-                item_str = r'\"{}\"'.format(item)
+                item_str = '"{}"'.format(item)
         else:
             item_str = '{}'.format(item)
         return item_str
 
-    def _escape_comma(self, str_item):
-        return str_item.replace(',', '|COMMA|')
+    def _escape_problem_jobsubmit_chars(self, str_item):
+        str_item = str_item.replace("'", "\\'")
+        str_item = str_item.replace('"', '\\"')
+        str_item = str_item.replace(',', '@COMMA@')
+        str_item = str_item.replace(' ', '@SPACE@')
+        return str_item
 
     def _update_cmd_base(self):
         arg_list = []
@@ -248,7 +251,12 @@ class ArgumentPasser(object):
                     posarg_list.append(' '.join([self._argval2str(item) for item in val]))
                 else:
                     posarg_list.append(self._argval2str(val))
-        self.cmd = """ {} {} {} {} """.format(self.exe, self._argval2str(self.script_file), ' '.join(posarg_list), self.cmd_optarg_base)
+        self.cmd = ' '.join([
+            self.exe,
+            self._argval2str(self.script_file),
+            ' '.join(posarg_list),
+            self.cmd_optarg_base,
+        ])
 
     def get_cmd(self):
         return self.cmd
@@ -256,8 +264,8 @@ class ArgumentPasser(object):
     def get_jobsubmit_cmd(self, scheduler,
                           jobscript=None, jobname=None,
                           time_hr=None, time_min=None, time_sec=None,
-                          memory_gb=None, node=None, email=None,
-                          envvars=None):
+                          memory_gb=None, ncores=None, email=None,
+                          envvars=None, hold=False):
         cmd = None
         cmd_envvars = None
         jobscript_optkey = None
@@ -279,10 +287,10 @@ class ArgumentPasser(object):
 
         if envvars is not None:
             if type(envvars) in (tuple, list):
-                cmd_envvars = ','.join(['p{}="{}"'.format(i, self._escape_comma(a))
+                cmd_envvars = ','.join(['p{}="{}"'.format(i, self._escape_problem_jobsubmit_chars(a))
                                         for i, a in enumerate(envvars)])
             elif type(envvars) == dict:
-                cmd_envvars = ','.join(['{}="{}"'.format(var_name, self._escape_comma(var_val))
+                cmd_envvars = ','.join(['{}="{}"'.format(var_name, self._escape_problem_jobsubmit_chars(var_val))
                                         for var_name, var_val in envvars.items()])
 
         if scheduler == SCHED_PBS:
@@ -291,13 +299,14 @@ class ArgumentPasser(object):
                 "-N {}".format(jobname) * (jobname is not None),
                 "-l {}".format(
                     ','.join([
-                        "nodes={}".format(node) if node is not None else '',
+                        "nodes=1:ppn={}".format(ncores) if ncores is not None else '',
                         "walltime={}".format(time_hms) if time_hms is not None else '',
                         "mem={}gb".format(memory_gb) if memory_gb is not None else ''
                     ]).strip(',')
                 ) if (time_hms is not None and memory_gb is not None) else '',
-                "-v {}".format(cmd_envvars) if cmd_envvars is not None else ''
-                "-m ae" if email else ''
+                "-v {}".format(cmd_envvars) if cmd_envvars is not None else '',
+                "-m ae" if email else '',
+                "-h" if hold else '',
             ])
             jobscript_optkey = '#PBS'
 
@@ -307,9 +316,10 @@ class ArgumentPasser(object):
                 "--job-name {}".format(jobname) if jobname is not None else '',
                 "--time {}".format(time_hms) if time_hms is not None else '',
                 "--mem {}G".format(memory_gb) if memory_gb is not None else '',
-                "-v {}".format(cmd_envvars) if cmd_envvars is not None else ''
+                "--ntasks {}".format(ncores) if ncores is not None else '',
+                "--export {}".format(cmd_envvars) if cmd_envvars is not None else '',
                 "--mail-type FAIL,END" if email else '',
-                "--mail-user {}".format(email) if type(email) is str else None
+                "--mail-user {}".format(email) if type(email) is str else '',
             ])
             jobscript_optkey = '#SBATCH'
 

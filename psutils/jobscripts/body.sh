@@ -22,7 +22,7 @@ fi
 # Required environment variable arguments
 jobscript_path="$p0"
 job_class="$p1"
-task_cmd="$p2"; task_cmd="${task_cmd//|COMMA|/,}"
+task_cmd="$p2"; task_cmd="${task_cmd//\@COMMA\@/,}"; task_cmd="${task_cmd//\@SPACE\@/ }";
 set +u
 # Optional environment variable arguments
 py_ver_min="$p3"
@@ -118,6 +118,7 @@ set +u; eval "$init_cmd"; set -u
 
 
 ## Python version check
+set +u
 if [ ! -z "$py_ver_min" ]; then
     py_ver=$(python -c 'import platform; print(platform.python_version())')
     IFS='.' read -ra py_ver_nums <<< "$py_ver"
@@ -133,6 +134,7 @@ if [ ! -z "$py_ver_min" ]; then
         fi
     done
 fi
+set -u
 
 
 echo "Changing to working directory: ${working_dir}"
