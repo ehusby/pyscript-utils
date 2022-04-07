@@ -8,7 +8,7 @@ import types
 import psutils.globals as psu_globals
 from psutils.print_methods import *
 
-from psutils.shell import execute_shell_command
+from psutils.shell import run_subprocess
 
 
 COPY_METHOD_VERB_TO_GERUND_DICT = {
@@ -152,7 +152,7 @@ class CopyMethod(object):
 
     def exec_copy_fn(self, srcpath, dstpath):
         if self.copy_shcmd is not None:
-            execute_shell_command(self.get_copy_shcmd_full(srcpath, dstpath))
+            run_subprocess(self.get_copy_shcmd_full(srcpath, dstpath))
         elif self.reverse_args:
             self.copy_fn(dstpath, srcpath)
         else:
