@@ -344,32 +344,22 @@ def handle_task_exception(args, error):
     return error_trace
 
 
-def send_email(to_addr, subject, body, from_addr=None):
-    from psutils.shell import execute_shell_command
+def send_script_completion_email(args, error_trace, shell_mail=False):
+    import psutils.email as psu_email
 
-    if psu_globals.SYSTYPE == psu_globals.SYSTYPE_WINDOWS:
-        if from_addr is None:
-            platform_node = platform.node()
-            from_addr = platform_node if platform_node is not None else 'your-computer'
-        msg = MIMEText(body)
-        msg['Subject'] = subject
-        msg['From'] = from_addr
-        msg['To'] = to_addr
-        s = smtplib.SMTP('localhost')
-        s.sendmail(to_addr, [to_addr], msg.as_string())
-        s.quit()
-
-    else:
-        mail_cmd = """ echo "{}" | mail -s "{}" {} """.format(body, subject, to_addr)
-        execute_shell_command(mail_cmd)
-
-
-def send_script_completion_email(args, error_trace):
     email_body = args.script_run_cmd+'\n'
     if error_trace is not None:
         email_status = "ERROR"
         email_body += "\n{}\n".format(error_trace)
     else:
         email_status = "COMPLETE"
+
     email_subj = "{} - {}".format(email_status, args.script_fname)
-    send_email(args.get(psu_sched.ARGSTR_EMAIL), email_subj, email_body)
+
+    to_address = args.get(psu_sched.ARGSTR_EMAIL)
+
+    if shell_mail:
+        psu_email.send_email_shell_mail(to_address, email_subj, email_body)
+    else:
+        # TODO: ArgumentPasser should have a "from address" to pass to send_email()
+        psu_email.send_email(to_address, email_subj, email_body)
