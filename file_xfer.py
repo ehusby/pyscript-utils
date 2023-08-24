@@ -342,6 +342,8 @@ def argparser_init(skip_src_path_check=False, skip_dst_path_check=False,
 
     psu_act.add_action_arguments(parser)
 
+    parser.add_argument('--version', action='version', version=f'%(prog)s {SCRIPT_VERSION_NUM}')
+
     return parser
 
 
