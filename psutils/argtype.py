@@ -74,7 +74,7 @@ def argtype_path_handler(path, argstr,
 
     if len(modes_overlap) > 0:
         raise cerr.DeveloperError("The following permission settings (`os.access` modes)"
-                             " appear in both required True and False lists: {}".format(modes_overlap))
+                                  " appear in both required True and False lists: {}".format(modes_overlap))
     if existcheck_fn is not None and existcheck_fn(path) != existcheck_reqval:
         existresult_desc = 'does not exist' if existcheck_reqval is True else 'already exists'
         raise cerr.ScriptArgumentError("argument {} '{}': {} {}".format(argstr, path, pathtype_desc, existresult_desc))

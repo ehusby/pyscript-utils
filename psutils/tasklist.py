@@ -194,7 +194,7 @@ def add_srclist_arguments(parser,
         help=' '.join([
             "Root directory used for source paths in {} textfiles when determining relative".format(ARGSTR_SRCLIST),
             "paths within destination directories. This path will be prepended to all source paths",
-            "that do not already start with this absolute path."
+            "that do not already start with this absolute path.",
         ])
     )
 
@@ -243,7 +243,7 @@ def add_srclist_arguments(parser,
         action='store_true',
         help=' '.join([
             "Copy all files within source directories into destination directories one level deep,"
-            "effectively collapsing the copied source directory tree."
+            "effectively collapsing the copied source directory tree.",
         ])
     )
 
