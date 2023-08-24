@@ -225,9 +225,6 @@ class DemRes(object):
 
 
 RECMP_CATALOGID = re.compile("[0-9A-F]{16}")
-RECMP_ORDERNUM = re.compile("\d{12}_\d{2}")
-RECMP_TILENUM = re.compile("R\d+C\d+-")
-RECMP_PARTNUM = re.compile("P\d{3}")
 
 
 class Pairname(psu_re.Regex):
@@ -310,20 +307,89 @@ Pairname.restr = Pairname.get_regex()
 Pairname.recmp = re.compile(Pairname.restr)
 
 
+class PartID(psu_re.Regex):
+    regrp_tilenum,  recmp_tilenum  = 'tilenum',  re.compile("R\d+C\d+")
+    regrp_ordernum, recmp_ordernum = 'ordernum', re.compile("\d{12}_\d{2}")
+    regrp_partnum,  recmp_partnum  = 'partnum',  re.compile("P\d{3}")
+    @staticmethod
+    def construct(ordernum=None, tilenum=None, partnum=None,
+                  validate=True, return_regex=False):
+        skip_inspection = False
+        if all([ordernum, tilenum, partnum]):
+            if not validate:
+                skip_inspection = True
+        elif not return_regex:
+            raise cerr.InvalidArgumentError(
+                "All regex group values must be provided when `return_regex=False`"
+            )
+        regrp_setting_dict = OrderedDict([
+            (PartID.regrp_tilenum,     [tilenum,  PartID.recmp_tilenum]),
+            (PartID.regrp_ordernum,    [ordernum, PartID.recmp_ordernum]),
+            (PartID.regrp_partnum,     [partnum,  PartID.recmp_partnum]),
+        ])
+        if not skip_inspection:
+            try:
+                for regrp, setting in regrp_setting_dict.items():
+                    arg_string, default_recmp = setting
+                    if arg_string is None:
+                        setting[0] = default_recmp.pattern
+                    elif validate and not psu_re.RE_FULLMATCH_FN(default_recmp, arg_string):
+                        raise psu_re.RegexConstructionFailure(regrp, arg_string, default_recmp.pattern)
+            except psu_re.RegexConstructionFailure:
+                if not return_regex:
+                    return None
+                else:
+                    raise
+        if return_regex:
+            full_restr = "(?:{}-)?{}_{}".format(*[
+                "(?P<{}>{})".format(regrp, setting[0])
+                for regrp, setting in regrp_setting_dict.items()
+            ])
+            return full_restr
+        else:
+            full_string = "{}{}".format(
+                tilenum+'-' if tilenum is not None else '',
+                '_'.join([setting[0] for setting in regrp_setting_dict.values()
+                          if setting[1] is not PartID.recmp_tilenum])
+            )
+            return full_string
+    @staticmethod
+    def get_regex(tilenum=None, ordernum=None, partnum=None, validate=True):
+        return PartID.construct(tilenum, ordernum, partnum, validate, True)
+    def __init__(self, string_or_match=None, re_function=psu_re.RE_FULLMATCH_FN,
+                 ordernum=None,
+                 tilenum=None,
+                 partnum=None,
+                 **re_function_kwargs):
+        if any([ordernum, tilenum, partnum]):
+            self.restr = self.get_regex(ordernum, tilenum, partnum)
+            self.recmp = re.compile(self.restr)
+        super(PartID, self).__init__(string_or_match, re_function, **re_function_kwargs)
+    def _populate_match(self, re_match):
+        super(PartID, self)._populate_match(re_match)
+        if self.matched:
+            self.PartID   = self
+            self.partid   = self.match_str
+            self.tilenum  = self.groupdict[PartID.regrp_tilenum]
+            self.ordernum = self.groupdict[PartID.regrp_ordernum]
+            self.partnum  = self.groupdict[PartID.regrp_partnum]
+    def PartID(self):
+        super(PartID, self)._reset_match_attributes()
+        self.PartID   = None
+        self.partid   = None
+        self.tilenum  = None
+        self.ordernum = None
+        self.partnum  = None
+PartID.restr = PartID.get_regex()
+PartID.recmp = re.compile(PartID.restr)
+
+
 class SceneDemOverlapID(psu_re.Regex):
     regrp_pairname = 'pairname'
-    regrp_tile1 = 'tile1'
-    regrp_tile2 = 'tile2'
-    regrp_order1 = 'order1'
-    regrp_order2 = 'order2'
-    regrp_part1 = 'part1'
-    regrp_part2 = 'part2'
-    restr = ''.join([
-        r"(?P<%s>{0})_" % regrp_pairname,
-        r"(?P<%s>{1})?(?P<%s>{2})_(?P<%s>{3})_" % (regrp_tile1, regrp_order1, regrp_part1),
-        r"(?P<%s>{1})?(?P<%s>{2})_(?P<%s>{3})"  % (regrp_tile2, regrp_order2, regrp_part2),
-    ])
-    restr = restr.format(Pairname.recmp.pattern, RECMP_TILENUM.pattern, RECMP_ORDERNUM.pattern, RECMP_PARTNUM.pattern)
+    regrp_partid1 = 'partid1'
+    regrp_partid2 = 'partid2'
+    restr = r"(?P<%s>{0})_(?P<%s>{1})_(?P<%s>{1})" % (regrp_pairname, regrp_partid1, regrp_partid2)
+    restr = restr.format(Pairname.recmp.pattern, PartID.recmp.pattern)
     recmp = re.compile(restr)
     def __init__(self, string_or_match=None, re_function=psu_re.RE_FULLMATCH_FN, **re_function_kwargs):
         super(SceneDemOverlapID, self).__init__(string_or_match, re_function, **re_function_kwargs)
@@ -334,26 +400,26 @@ class SceneDemOverlapID(psu_re.Regex):
             self.sceneDemOverlapID = self.match_str
             self.pairname          = self.groupdict[SceneDemOverlapID.regrp_pairname]
             self.Pairname          = Pairname(self.re_match)
-            self.tile1             = self.groupdict[SceneDemOverlapID.regrp_tile1]
-            self.order1            = self.groupdict[SceneDemOverlapID.regrp_order1]
-            self.part1             = self.groupdict[SceneDemOverlapID.regrp_part1]
-            self.tile2             = self.groupdict[SceneDemOverlapID.regrp_tile2]
-            self.order2            = self.groupdict[SceneDemOverlapID.regrp_order2]
-            self.part2             = self.groupdict[SceneDemOverlapID.regrp_part2]
-            self.orders            = [self.order1, self.order2]
+            self.partid1           = self.groupdict[SceneDemOverlapID.regrp_partid1]
+            self.PartID1           = PartID(self.partid1)
+            self.partid2           = self.groupdict[SceneDemOverlapID.regrp_partid2]
+            self.PartID2           = PartID(self.partid2)
+            self.ordernum1         = self.PartID1.ordernum
+            self.ordernum2         = self.PartID2.ordernum
+            self.ordernums         = [self.ordernum1, self.ordernum2]
     def _reset_match_attributes(self):
         super(SceneDemOverlapID, self)._reset_match_attributes()
         self.SceneDemOverlapID = None
         self.sceneDemOverlapID = None
         self.pairname          = None
         self.Pairname          = None
-        self.tile1             = None
-        self.order1            = None
-        self.part1             = None
-        self.tile2             = None
-        self.order2            = None
-        self.part2             = None
-        self.orders            = None
+        self.partid1           = None
+        self.PartID1           = None
+        self.partid2           = None
+        self.PartID2           = None
+        self.ordernum1         = None
+        self.ordernum2         = None
+        self.ordernums         = None
 
 
 class SceneDemID(psu_re.Regex):
@@ -377,16 +443,16 @@ class SceneDemID(psu_re.Regex):
             self.SceneDemOverlapID = SceneDemOverlapID(self.re_match)
             self.pairname          = self.groupdict[SceneDemOverlapID.regrp_pairname]
             self.Pairname          = Pairname(self.re_match)
-            self.tile1             = self.groupdict[SceneDemOverlapID.regrp_tile1]
-            self.order1            = self.groupdict[SceneDemOverlapID.regrp_order1]
-            self.part1             = self.groupdict[SceneDemOverlapID.regrp_part1]
-            self.tile2             = self.groupdict[SceneDemOverlapID.regrp_tile2]
-            self.order2            = self.groupdict[SceneDemOverlapID.regrp_order2]
-            self.part2             = self.groupdict[SceneDemOverlapID.regrp_part2]
+            self.partid1           = self.groupdict[SceneDemOverlapID.regrp_partid1]
+            self.PartID1           = PartID(self.partid1)
+            self.partid2           = self.groupdict[SceneDemOverlapID.regrp_partid2]
+            self.PartID2           = PartID(self.partid2)
+            self.ordernum1         = self.PartID1.ordernum
+            self.ordernum2         = self.PartID2.ordernum
+            self.ordernums         = [self.ordernum1, self.ordernum2]
             self.res               = self.groupdict[SceneDemID.regrp_res]
             self.DemRes            = DemRes(self.res)
             self.subtile           = self.groupdict[SceneDemID.regrp_subtile]
-            self.orders            = [self.order1, self.order2]
     def _reset_match_attributes(self):
         super(SceneDemID, self)._reset_match_attributes()
         self.SceneDemID        = None
@@ -394,16 +460,16 @@ class SceneDemID(psu_re.Regex):
         self.SceneDemOverlapID = None
         self.pairname          = None
         self.Pairname          = None
-        self.tile1             = None
-        self.order1            = None
-        self.part1             = None
-        self.tile2             = None
-        self.order2            = None
-        self.part2             = None
+        self.partid1           = None
+        self.PartID1           = None
+        self.partid2           = None
+        self.PartID2           = None
+        self.ordernum1         = None
+        self.ordernum2         = None
+        self.ordernums         = None
         self.res               = None
         self.DemRes            = None
         self.subtile           = None
-        self.orders            = None
 
 
 class StripSegmentID(psu_re.Regex):
