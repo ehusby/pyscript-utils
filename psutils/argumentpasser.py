@@ -155,7 +155,14 @@ class ArgumentPasser(object):
                 self.vars_dict[self.argstr2varstr[argstr_i]] = self.argstr2argtype[argstr_i](newval_i)
         else:
             argstr_list = argstrs if type(argstrs) in (tuple, list) else [argstrs]
+            default_newval = newval
             for argstr in argstr_list:
+                if type(argstr) in (tuple, list):
+                    if len(argstr) != 2:
+                        raise cerr.InvalidArgumentError("`argstrs` tuple/list item can only have two elements (argstr, newval), but received: {}".format(argstr))
+                    argstr, newval = argstr
+                else:
+                    newval = default_newval
                 if argstr not in self.argstr2varstr:
                     raise cerr.InvalidArgumentError("This {} object has no '{}' argument string".format(type(self).__name__, argstr))
                 if newval is None:
