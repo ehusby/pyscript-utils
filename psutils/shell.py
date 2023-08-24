@@ -22,7 +22,9 @@ def run_subprocess(cmd_str=None, cmd_token_list=None,
                    print_failure_info=True,
                    print_begin_info=False,
                    print_end_info=False,
-                   print_cmd_in_info=True):
+                   print_cmd_in_info=True,
+                   print_method=print,
+                   eprint_method=eprint):
     if [arg is not None for arg in (cmd_str, cmd_token_list)].count(True) != 1:
         raise cerr.InvalidArgumentError("Only one of (`cmd_str`, `cmd_token_list`) arguments must be provide")
     if return_streams and return_popen:
@@ -61,7 +63,7 @@ def run_subprocess(cmd_str=None, cmd_token_list=None,
                             universal_newlines=True, encoding=encoding)
     proc_pid = proc.pid
     if print_begin_info:
-        print("Beginning subprocess (PID={}){}".format(
+        print_method("Beginning subprocess (PID={}){}".format(
             proc_pid,
             ': """ {} """'.format(cmd_str) if print_cmd_in_info else '')
         )
@@ -108,11 +110,11 @@ def run_subprocess(cmd_str=None, cmd_token_list=None,
         if print_stderr_in_failure and stderr is not None:
             sys.stderr.write(stderr)
         if print_failure_info:
-            eprint(end_info)
+            eprint_method(end_info)
             printed_end_info = True
 
     if print_end_info and not printed_end_info:
-        print(end_info)
+        print_method(end_info)
 
     if return_popen:
         return proc
