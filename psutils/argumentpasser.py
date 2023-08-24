@@ -28,15 +28,15 @@ class CustomArgumentParser(argparse.ArgumentParser):
 
 class ArgumentPasser(object):
 
-    def __init__(self, executable_path, script_file, parser, sys_argv=[''],
-                 remove_args=[], parse=True):
+    def __init__(self, executable_path, script_file, parser,
+                 sys_argv=None, remove_args=None, parse=True):
         self.exe = executable_path
         self.script_file = script_file
         self.script_fname = os.path.basename(script_file)
         self.parser = parser
-        self.sys_argv = list(sys_argv)
+        self.sys_argv = [] if sys_argv is None else list(sys_argv)
         self.script_run_cmd = ' '.join(self.sys_argv)
-        self.removed_args = list(remove_args)
+        self.removed_args = [] if remove_args is None else list(remove_args)
         self.parsed = False
 
         self._update_arg_dict()
