@@ -73,7 +73,7 @@ except ImportError:
 
 ## Non-PyPI
 import psutils.copymethod as psu_cm
-from psutils.func import identity
+from psutils.identity import identity
 
 ##############################
 

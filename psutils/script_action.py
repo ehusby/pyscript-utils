@@ -17,7 +17,7 @@ from psutils.print_methods import *
 
 from psutils import PYTHON_VERSION_REQUIRED_MIN
 from psutils.stream import capture_stdout_stderr, capture_error_trace
-from psutils.func import with_noop
+from psutils.noop import with_noop
 
 
 ##############################

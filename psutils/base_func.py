@@ -9,13 +9,22 @@ def identity(arg): return arg
 
 def plural_identity(*args): return args
 
-def mean(numbers):
-    return float(sum(numbers)) / max(len(numbers), 1)
+def mean(nums):
+    cnt = len(nums)
+    if cnt == 0:
+        return None
+    return sum(nums) / float(cnt)
 
-def median(lst):
-    n = len(lst)
-    s = sorted(lst)
-    return (sum(s[n//2-1:n//2+1])/2.0, s[n//2])[n % 2] if n else None
+def median(nums):
+    cnt = len(nums)
+    if cnt == 0:
+        return None
+    nums = sorted(nums)
+    med_idx = cnt // 2
+    if cnt % 2 == 1:
+        return nums[med_idx]
+    else:
+        return (nums[med_idx-1] + nums[med_idx]) / float(2)
 
 @contextlib.contextmanager
 def with_noop():
@@ -53,3 +62,8 @@ def yield_loop(iterable):
     while True:
         for item in iterable:
             yield item
+
+def unique_ordered(seq):
+    seen = set()
+    seen_add = seen.add
+    return [x for x in seq if not (x in seen or seen_add(x))]

@@ -18,7 +18,7 @@ import psutils.copymethod as psu_cm
 import psutils.argtype as psu_at
 from psutils.print_methods import *
 
-from psutils.func import exhaust
+from psutils.generator import exhaust
 
 
 ##############################
