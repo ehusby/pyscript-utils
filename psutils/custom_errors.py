@@ -1,24 +1,24 @@
 
 class VersionError(Exception):
     def __init__(self, msg=""):
-        super(Exception, self).__init__(msg)
+        super(VersionError, self).__init__(msg)
 
 class DeveloperError(Exception):
     def __init__(self, msg=""):
-        super(Exception, self).__init__(msg)
+        super(DeveloperError, self).__init__(msg)
 
 class ScriptArgumentError(Exception):
     def __init__(self, msg=""):
-        super(Exception, self).__init__(msg)
+        super(ScriptArgumentError, self).__init__(msg)
 
 class InvalidArgumentError(Exception):
     def __init__(self, msg=""):
-        super(Exception, self).__init__(msg)
+        super(InvalidArgumentError, self).__init__(msg)
 
 class ExternalError(Exception):
     def __init__(self, msg=""):
-        super(Exception, self).__init__(msg)
+        super(ExternalError, self).__init__(msg)
 
 class DimensionError(Exception):
     def __init__(self, msg=""):
-        super(Exception, self).__init__(msg)
+        super(DimensionError, self).__init__(msg)
