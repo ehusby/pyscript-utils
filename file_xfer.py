@@ -6,10 +6,8 @@
 from __future__ import print_function
 from __future__ import division
 import argparse
-import copy
 import os
 import sys
-import traceback
 
 ##############################
 
@@ -63,6 +61,7 @@ import psutils.scheduler as psu_sched
 ### Script imports ###
 
 ## Python Standard Library
+import copy
 
 ## Non-Standard PyPI
 try:
